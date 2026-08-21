@@ -225,9 +225,14 @@ function resolveChernobylLanding(state: GameState, playerId: string): GameState 
  * owning nothing at all means there's nothing to "distribute," so you
  * just claim it.
  */
+/** Chernobyl Power is a forced burden, not a real asset - it should never move via The Volga's give-everything-away mechanics, whichever direction they run. */
+function tradeableTileIds(tileIds: number[]): number[] {
+  return tileIds.filter((id) => id !== CHERNOBYL_TILE_ID);
+}
+
 function resolveVolgaLanding(state: GameState, playerId: string): GameState {
   const ownerId = findOwner(state, VOLGA_TILE_ID);
-  const landerProperties = state.players[playerId].ownedTileIds;
+  const landerProperties = tradeableTileIds(state.players[playerId].ownedTileIds);
 
   if (ownerId === playerId) return state; // landing on your own Volga
 
@@ -532,7 +537,7 @@ export function acceptVolgaOffer(state: GameState): GameState {
   if (state.pendingDecision?.type !== 'volgaOffer') return state;
 
   const otherPlayers = state.turnOrder.filter((id) => id !== playerId);
-  const propertiesToGive = state.players[playerId].ownedTileIds;
+  const propertiesToGive = tradeableTileIds(state.players[playerId].ownedTileIds);
 
   let next = state;
   propertiesToGive.forEach((tileId, index) => {

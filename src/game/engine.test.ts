@@ -524,6 +524,45 @@ describe('The Volga', () => {
     expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 3, 28]));
   });
 
+  it('never gives up Chernobyl Power - only tradeable properties move', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [28] }, // p1 owns Volga
+        p2: { ...state.players.p2, ownedTileIds: [1, 12] }, // p2 owns a property + Chernobyl
+      },
+    };
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+
+    // Chernobyl stays with p2; only the regular property gets surrendered.
+    expect(state.players.p2.ownedTileIds).toEqual([12]);
+    expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 28]));
+  });
+
+  it('treats owning only Chernobyl Power as owning nothing, for stealing the Volga', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [28] },
+        p2: { ...state.players.p2, ownedTileIds: [12] }, // only Chernobyl - counts as nothing
+      },
+    };
+    state = endTurn(state);
+    state = withPosition(state, 'p2', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual(expect.arrayContaining([12, 28]));
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
   it('steals the Volga if the landing player owns nothing', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
