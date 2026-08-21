@@ -85,15 +85,22 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
       {isMyTurn && !game.pendingDecision && (
         <div className="actions">
-          <button onClick={handleRoll} disabled={isRolling}>
-            {isRolling ? 'Rolling...' : 'Roll Dice'}
-          </button>
+          {/* Roll is only available before this turn's first roll, or
+              again after doubles ("if you get a double, you get to roll
+              again"). Once a non-doubles roll has happened, only End Turn
+              shows - otherwise a player could just keep re-rolling
+              forever instead of passing the turn. */}
+          {(!game.lastRoll || game.lastRollWasDoubles) && (
+            <button onClick={handleRoll} disabled={isRolling}>
+              {isRolling ? 'Rolling...' : 'Roll Dice'}
+            </button>
+          )}
           {game.lastRoll && !game.lastRollWasDoubles && (
             <button onClick={() => endTurnAndSync(roomCode, game)}>
               End Turn
             </button>
           )}
-          {game.lastRoll && game.lastRollWasDoubles && (
+          {game.lastRollWasDoubles && (
             <p className="hint">Doubles! Roll again.</p>
           )}
         </div>
