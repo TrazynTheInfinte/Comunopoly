@@ -6,6 +6,8 @@ import {
   claimTrotskyHidingSpot,
   createInitialGameState,
   declineVolgaOffer,
+  devDrawCard,
+  devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
   endTurn,
@@ -1141,5 +1143,34 @@ describe('held cards (hand)', () => {
     const disappeared = useShowTrial(state, 'p1', 'p2', 'disappear');
     expect(disappeared.players.p2.roubles).toBe(1000);
     expect(disappeared.players.p2.inJail).toBe(false);
+  });
+});
+
+describe('dev helpers', () => {
+  it('devJumpToTile moves the current player and resolves landing on it', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devJumpToTile(state, 6); // Moscow Metro, unowned property
+
+    expect(state.players.p1.position).toBe(6);
+    expect(state.pendingDecision).toEqual({ type: 'purchase', tileId: 6 });
+  });
+
+  it("devJumpToTile waives the STOY pass fee even when the jump wraps through it", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 38);
+    state = devJumpToTile(state, 5); // wraps through STOY on the way
+
+    expect(state.players.p1.roubles).toBe(1000); // no pass fee charged
+  });
+
+  it('devDrawCard draws for the current player regardless of where they are standing', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedCard(state, 'bankError');
+    state = devDrawCard(state, 'communistTest');
+
+    expect(state.players.p1.roubles).toBe(2000);
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    // Forced draws never touch the pile.
+    expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length);
   });
 });

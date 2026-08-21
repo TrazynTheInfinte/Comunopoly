@@ -1,6 +1,9 @@
 import { useState } from 'react';
+import { BOARD } from '../data/board';
 import { ALL_CARDS, findCard } from '../data/cards';
 import {
+  devDrawCardAndSync,
+  devJumpToTileAndSync,
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
@@ -22,6 +25,7 @@ interface DevPanelProps {
 function DevPanel({ room, roomCode, game }: DevPanelProps) {
   const [forcedDie1, setForcedDie1] = useState('');
   const [forcedDie2, setForcedDie2] = useState('');
+  const [jumpTileId, setJumpTileId] = useState(0);
 
   return (
     <section className="dev-panel">
@@ -108,6 +112,33 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
         {game.forcedCardId && (
           <p className="hint">Next card draw forced to "{findCard(game.forcedCardId).title}"</p>
         )}
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Jump to a space (resolves landing on it, no rolling)</p>
+        <div className="dev-panel-row">
+          <select value={jumpTileId} onChange={(event) => setJumpTileId(Number(event.target.value))}>
+            {BOARD.map((tile) => (
+              <option key={tile.id} value={tile.id}>
+                {tile.id}: {tile.name}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => devJumpToTileAndSync(roomCode, game, jumpTileId)}>Jump</button>
+        </div>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Force draw a card right now (any space)</p>
+        <div className="dev-panel-row">
+          <button onClick={() => devDrawCardAndSync(roomCode, game, 'communistTest')}>
+            Draw Communist Test
+          </button>
+          <button onClick={() => devDrawCardAndSync(roomCode, game, 'noChance')}>
+            Draw No Chance
+          </button>
+        </div>
+        <p className="hint">Uses the forced card above if one's set, otherwise a real draw.</p>
       </div>
     </section>
   );

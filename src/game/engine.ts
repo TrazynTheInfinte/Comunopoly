@@ -1319,3 +1319,40 @@ export function devSetForcedCard(
 ): GameState {
   return { ...state, forcedCardId: cardId };
 }
+
+/**
+ * Teleports the current player to any tile and resolves landing on it,
+ * same as if they'd rolled their way there - buys/rent/jail/cards/all of
+ * it. Always approaches from the front (ignores movingBackward) and
+ * waives the STOY pass fee, same simplification as Nomenklatura's
+ * "advance to" movement, since this is a testing shortcut, not a real
+ * move.
+ */
+export function devJumpToTile(
+  state: GameState,
+  tileId: number,
+  rng: () => number = Math.random,
+): GameState {
+  const playerId = currentPlayerId(state);
+  const player = state.players[playerId];
+  const forwardSteps = (tileId - player.position + BOARD_SIZE) % BOARD_SIZE;
+
+  if (forwardSteps === 0) {
+    return resolveLanding(state, playerId, tileId, rng);
+  }
+  const forcedForward: GameState = {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, movingBackward: false } },
+  };
+  return moveAndResolve(forcedForward, playerId, forwardSteps, rng, { waiveStoyFee: true });
+}
+
+/** Draws a card for the current player right now, regardless of where they're standing - uses forcedCardId if one's set, otherwise a real draw from the given deck's pile. */
+export function devDrawCard(
+  state: GameState,
+  deck: CardDeck,
+  rng: () => number = Math.random,
+): GameState {
+  const playerId = currentPlayerId(state);
+  return resolveCardLanding(state, playerId, deck, rng);
+}

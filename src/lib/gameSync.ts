@@ -1,6 +1,6 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import type { GameState, PieceId } from '../types/game';
+import type { CardDeck, GameState, PieceId } from '../types/game';
 import {
   acceptVolgaOffer,
   acknowledgeCard,
@@ -8,6 +8,8 @@ import {
   claimTrotskyHidingSpot,
   createInitialGameState,
   declineVolgaOffer,
+  devDrawCard,
+  devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
@@ -128,4 +130,20 @@ export async function devSetForcedCardAndSync(
   cardId: string | null,
 ) {
   await writeGameState(roomCode, devSetForcedCard(game, cardId));
+}
+
+export async function devJumpToTileAndSync(
+  roomCode: string,
+  game: GameState,
+  tileId: number,
+) {
+  await writeGameState(roomCode, devJumpToTile(game, tileId));
+}
+
+export async function devDrawCardAndSync(
+  roomCode: string,
+  game: GameState,
+  deck: CardDeck,
+) {
+  await writeGameState(roomCode, devDrawCard(game, deck));
 }
