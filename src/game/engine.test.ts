@@ -138,6 +138,26 @@ describe('rent', () => {
     expect(state.players.p1.roubles).toBe(1000 - 100 + expectedRent);
   });
 
+  it("seizes rent for the State instead of paying it to a jailed owner", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedRoll(state, [2, 4]); // p1 buys Moscow Metro (tile 6)
+    state = rollDice(state);
+    state = buyProperty(state);
+    state = endTurn(state); // p2's turn
+
+    // Jail p1 directly (setup, not via a real roll).
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, inJail: true } },
+    };
+
+    state = devSetForcedRoll(state, [2, 4]); // p2 lands on tile 6 again
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000 - 20); // still pays rent
+    expect(state.players.p1.roubles).toBe(1000 - 100); // but the jailed owner never receives it
+  });
+
   it('scales railroad rent with how many the owner has', () => {
     let state = createInitialGameState(PLAYERS);
     // Hand p1 two railroads directly (tiles 5 and 15) to set up the scenario.
@@ -155,5 +175,116 @@ describe('rent', () => {
 
     expect(state.players.p2.roubles).toBe(1000 - 50); // 2 railroads owned -> 50 rent
     expect(state.players.p1.roubles).toBe(1000 + 50);
+  });
+});
+
+describe('jail', () => {
+  it('sends a player straight to jail when landing on the Go To Jail tile', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 20); // Free Parking
+    state = devSetForcedRoll(state, [4, 6]); // sum 10 -> tile 30, Go To Jail
+    state = rollDice(state);
+
+    expect(state.players.p1.position).toBe(10);
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it('sends a player to jail after three consecutive doubles instead of moving', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedRoll(state, [2, 2]);
+    state = rollDice(state);
+    state = devSetForcedRoll(state, [2, 2]);
+    state = rollDice(state);
+    state = devSetForcedRoll(state, [2, 2]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.position).toBe(10);
+    expect(state.lastRollWasDoubles).toBe(false); // turn ends, doesn't chain into another roll
+    expect(state.doublesCount).toBe(0);
+  });
+
+  it('escapes jail by rolling doubles, then moves normally from the jail tile', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, inJail: true, position: 10 } },
+    };
+    state = devSetForcedRoll(state, [3, 3]); // doubles, 6 steps from tile 10
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p1.position).toBe(16);
+    // Escaping doesn't chain into another roll - it's a one-time exit, not the usual doubles bonus.
+    expect(state.lastRollWasDoubles).toBe(false);
+  });
+
+  it('stays in jail after a non-doubles roll with no 1s', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, inJail: true, position: 10 } },
+    };
+    state = devSetForcedRoll(state, [2, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.position).toBe(10);
+  });
+
+  it('disappears (placeholder reset) when rolling a 1 in jail', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: {
+          ...state.players.p1,
+          inJail: true,
+          position: 10,
+          roubles: 500,
+          ownedTileIds: [6],
+        },
+      },
+    };
+    state = devSetForcedRoll(state, [1, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p1.position).toBe(0);
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
+  it('charges the jail bribe at end of turn if still in jail', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, inJail: true, position: 10 } },
+    };
+    state = devSetForcedRoll(state, [2, 4]); // fails to escape
+    state = rollDice(state);
+    state = endTurn(state);
+
+    expect(state.players.p1.roubles).toBe(1000 - 100);
+    expect(state.currentTurnIndex).toBe(1); // turn actually passed
+  });
+
+  it("disappears (placeholder reset) if the bribe can't be afforded at end of turn", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, position: 10, roubles: 50 },
+      },
+    };
+    state = devSetForcedRoll(state, [2, 4]); // fails to escape
+    state = rollDice(state);
+    state = endTurn(state);
+
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p1.roubles).toBe(1000); // reset by the placeholder
+    expect(state.currentTurnIndex).toBe(1);
   });
 });

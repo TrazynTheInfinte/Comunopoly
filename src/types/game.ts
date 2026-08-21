@@ -121,6 +121,8 @@ export interface GameState {
   players: Record<string, GamePlayerState>;
   lastRoll: [number, number] | null;
   lastRollWasDoubles: boolean;
+  /** Consecutive doubles rolled by the current player this turn (outside jail) - 3 in a row sends them to jail instead of moving. Resets whenever the turn actually passes to someone else. */
+  doublesCount: number;
   pendingDecision: PendingPurchase | null;
   /** Dev-panel override: if set, the next rollDice() call uses this instead of a random roll, then clears it. */
   forcedRoll: [number, number] | null;

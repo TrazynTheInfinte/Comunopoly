@@ -77,7 +77,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
                 {room.players[id]?.name} ({pieceName(player.pieceId)})
               </span>
               <span className="player-roubles">₽{player.roubles}</span>
-              <span className="player-position">{getTile(player.position).name}</span>
+              <span className="player-position">
+                {getTile(player.position).name}
+                {player.inJail ? ' [JAIL]' : ''}
+              </span>
             </li>
           );
         })}

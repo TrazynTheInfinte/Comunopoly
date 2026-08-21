@@ -12,6 +12,9 @@ const PROPERTY_RENT_RATE = 0.2;
 // the same owner has. All 4 of our railroads are priced 200, same as the
 // classic board, so we can reuse this table directly.
 const RAILROAD_RENT_BY_COUNT = [25, 50, 100, 200];
+const JAIL_POSITION = 10;
+const JAIL_BRIBE = 100;
+const MAX_DOUBLES_BEFORE_JAIL = 3;
 
 /** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned. */
 export function createInitialGameState(
@@ -34,6 +37,7 @@ export function createInitialGameState(
     players,
     lastRoll: null,
     lastRollWasDoubles: false,
+    doublesCount: 0,
     pendingDecision: null,
     forcedRoll: null,
     log: ['The game begins.'],
@@ -91,6 +95,50 @@ function logEvent(state: GameState, message: string): GameState {
   return { ...state, log: [...state.log, message].slice(-20) };
 }
 
+function sendToJail(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...player, position: JAIL_POSITION, inJail: true },
+    },
+  };
+}
+
+/**
+ * TEMPORARY placeholder for the real Disappear mechanic (seize
+ * everything, respawn as a NEW piece drawn from the Piece Pool - see
+ * CONTEXT.md). That needs the Piece Pool/multi-piece system, which
+ * doesn't exist yet. Until then, "disappearing" just resets this player
+ * to a fresh start under their SAME piece, so jail is testable without
+ * getting stuck. Replace this once the real respawn system is built.
+ */
+function disappearStub(
+  state: GameState,
+  playerId: string,
+  reason: string,
+): GameState {
+  const player = state.players[playerId];
+  const next: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: {
+        ...player,
+        position: 0,
+        roubles: STARTING_ROUBLES,
+        ownedTileIds: [],
+        inJail: false,
+      },
+    },
+  };
+  return logEvent(
+    next,
+    `Disappeared (${reason}). [placeholder reset - full respawn not yet implemented]`,
+  );
+}
+
 function resolveLanding(
   state: GameState,
   playerId: string,
@@ -117,38 +165,38 @@ function resolveLanding(
           ? RAILROAD_RENT_BY_COUNT[railroadsOwnedBy(state, ownerId) - 1]
           : Math.round(tile.price * PROPERTY_RENT_RATE);
 
-      let next = payRoubles(state, playerId, rent);
-      next = giveRoubles(next, ownerId, rent);
-      return logEvent(next, `Paid ${rent} roubles rent on ${tile.name}.`);
+      const next = payRoubles(state, playerId, rent);
+      if (state.players[ownerId].inJail) {
+        // "When in jail, any rent you collect is seized by the state" -
+        // the payer still pays, but the jailed owner never sees it.
+        return logEvent(
+          next,
+          `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is in jail).`,
+        );
+      }
+      return logEvent(
+        giveRoubles(next, ownerId, rent),
+        `Paid ${rent} roubles rent on ${tile.name}.`,
+      );
     }
+    case 'goToJail':
+      return logEvent(sendToJail(state, playerId), 'Sent directly to jail!');
     // Jail (just visiting) and Free Parking have no effect yet -
-    // Smuggling isn't implemented in this increment. Go To Jail,
-    // utilities, cards, and the special tiles (Kremlin/NKVD HQ) are all
-    // deferred entirely for now: the piece lands there and nothing
-    // else happens yet.
+    // Smuggling isn't implemented in this increment. Utilities, cards,
+    // and the special tiles (Kremlin/NKVD HQ) are all deferred entirely
+    // for now: the piece lands there and nothing else happens yet.
     default:
       return state;
   }
 }
 
-/**
- * Rolls the dice for the current player, moves their piece, and resolves
- * whatever they land on. Returns a brand-new GameState rather than
- * mutating the one it's given - React and Firestore both rely on that to
- * notice something changed.
- */
-export function rollDice(
+/** Moves a player by `steps`, resolving STOY and whatever they land on. Shared by a normal roll and a jail-escape roll, since both work the same way once you know where movement starts from. */
+function moveAndResolve(
   state: GameState,
-  rng: () => number = Math.random,
+  playerId: string,
+  steps: number,
 ): GameState {
-  const playerId = currentPlayerId(state);
   const player = state.players[playerId];
-
-  const roll = state.forcedRoll ?? rollTwoDice(rng);
-  const [die1, die2] = roll;
-  const isDoubles = die1 === die2;
-  const steps = die1 + die2;
-
   const rawNewPosition = player.position + steps;
   const newPosition = rawNewPosition % BOARD_SIZE;
   // Landing exactly on STOY pays out; merely passing through it (wrapping
@@ -159,19 +207,13 @@ export function rollDice(
 
   let next: GameState = {
     ...state,
-    forcedRoll: null,
-    lastRoll: roll,
-    lastRollWasDoubles: isDoubles,
     players: {
       ...state.players,
       [playerId]: { ...player, position: newPosition },
     },
   };
 
-  next = logEvent(
-    next,
-    `Rolled ${die1} + ${die2}${isDoubles ? ' (doubles!)' : ''}, moved to ${getTile(newPosition).name}.`,
-  );
+  next = logEvent(next, `Moved to ${getTile(newPosition).name}.`);
 
   if (passedStoy) {
     next = payRoubles(next, playerId, STOY_PASS_FEE);
@@ -186,6 +228,88 @@ export function rollDice(
   }
 
   return resolveLanding(next, playerId, newPosition);
+}
+
+/**
+ * Handles a roll made by a player who's currently in jail: doubles means
+ * they escape and move as normal; a 1 on either die means they
+ * Disappear; anything else means they stay put for another turn.
+ */
+function resolveJailRoll(
+  state: GameState,
+  playerId: string,
+  die1: number,
+  die2: number,
+  isDoubles: boolean,
+  steps: number,
+): GameState {
+  // Being in jail suspends the doubles-roll-again and 3-doubles-to-jail
+  // rules entirely - "except while in jail," per the source rules.
+  const next: GameState = { ...state, lastRollWasDoubles: false, doublesCount: 0 };
+
+  if (isDoubles) {
+    const escaped: GameState = {
+      ...next,
+      players: {
+        ...next.players,
+        [playerId]: { ...next.players[playerId], inJail: false },
+      },
+    };
+    return moveAndResolve(
+      logEvent(escaped, 'Rolled doubles and escaped jail!'),
+      playerId,
+      steps,
+    );
+  }
+
+  if (die1 === 1 || die2 === 1) {
+    return disappearStub(next, playerId, 'rolled a 1 in jail');
+  }
+
+  return logEvent(next, 'Failed to roll doubles - still in jail.');
+}
+
+/**
+ * Rolls the dice for the current player and resolves the result: normal
+ * movement, an in-jail escape attempt, or - after three doubles in a row
+ * - a one-way trip to jail instead of moving further. Returns a
+ * brand-new GameState rather than mutating the one it's given - React and
+ * Firestore both rely on that to notice something changed.
+ */
+export function rollDice(
+  state: GameState,
+  rng: () => number = Math.random,
+): GameState {
+  const playerId = currentPlayerId(state);
+  const player = state.players[playerId];
+
+  const roll = state.forcedRoll ?? rollTwoDice(rng);
+  const [die1, die2] = roll;
+  const isDoubles = die1 === die2;
+  const steps = die1 + die2;
+
+  let next: GameState = { ...state, forcedRoll: null, lastRoll: roll };
+  next = logEvent(
+    next,
+    `Rolled ${die1} + ${die2}${isDoubles ? ' (doubles!)' : ''}.`,
+  );
+
+  if (player.inJail) {
+    return resolveJailRoll(next, playerId, die1, die2, isDoubles, steps);
+  }
+
+  const doublesCount = isDoubles ? state.doublesCount + 1 : 0;
+  if (isDoubles && doublesCount >= MAX_DOUBLES_BEFORE_JAIL) {
+    next = { ...next, doublesCount: 0, lastRollWasDoubles: false };
+    next = sendToJail(next, playerId);
+    return logEvent(
+      next,
+      'Rolled doubles three times in a row - sent to jail!',
+    );
+  }
+
+  next = { ...next, doublesCount, lastRollWasDoubles: isDoubles };
+  return moveAndResolve(next, playerId, steps);
 }
 
 /** The current player buys the property/railroad they just landed on. */
@@ -226,6 +350,11 @@ export function skipPurchase(state: GameState): GameState {
  * you get to roll again"). Refuses to do anything while a purchase
  * decision is still pending; the UI should only show an "End Turn"
  * button once that's resolved.
+ *
+ * If the player is still in jail as their turn ends, this also charges
+ * the mandatory 100 rouble bribe (or Disappears them if they can't
+ * afford it) - "you must bribe the guards... at the end of your turn or
+ * you will disappear."
  */
 export function endTurn(state: GameState): GameState {
   if (state.pendingDecision) return state;
@@ -234,13 +363,30 @@ export function endTurn(state: GameState): GameState {
     return { ...state, lastRoll: null, lastRollWasDoubles: false };
   }
 
-  const nextIndex = (state.currentTurnIndex + 1) % state.turnOrder.length;
+  const endingPlayerId = currentPlayerId(state);
+  let next = state.players[endingPlayerId].inJail
+    ? chargeJailBribe(state, endingPlayerId)
+    : state;
+
+  const nextIndex = (next.currentTurnIndex + 1) % next.turnOrder.length;
   return {
-    ...state,
+    ...next,
     currentTurnIndex: nextIndex,
     lastRoll: null,
     lastRollWasDoubles: false,
+    doublesCount: 0,
   };
+}
+
+function chargeJailBribe(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  if (player.roubles < JAIL_BRIBE) {
+    return disappearStub(state, playerId, 'could not afford the jail bribe');
+  }
+  return logEvent(
+    payRoubles(state, playerId, JAIL_BRIBE),
+    `Paid the ${JAIL_BRIBE} rouble jail bribe.`,
+  );
 }
 
 // --- Dev panel helpers -------------------------------------------------
