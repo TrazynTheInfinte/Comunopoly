@@ -76,6 +76,7 @@ function App() {
 
   return (
     <main className="app">
+      <p className="build-badge">build {__BUILD_SHA__}</p>
       <h1 className="title">COMUNOPOLY</h1>
       <p className="subtitle">The People's Monopoly</p>
 
