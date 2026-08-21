@@ -7,7 +7,9 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Room } from '../types/room';
+import { STARTING_PIECES } from '../data/pieces';
+import type { PieceId } from '../types/game';
+import type { Room, RoomMode } from '../types/room';
 
 // Room Codes are typed by hand, so we stick to unambiguous uppercase
 // letters (no 0/O or 1/I mixups).
@@ -23,6 +25,15 @@ function randomRoomCode(): string {
   return code;
 }
 
+/** Picks a random Piece not already claimed by anyone in the room - null if none are left. */
+function pickAvailablePiece(claimedPieceIds: (PieceId | null)[]): PieceId | null {
+  const available = STARTING_PIECES.map((piece) => piece.id).filter(
+    (id) => !claimedPieceIds.includes(id),
+  );
+  if (available.length === 0) return null;
+  return available[Math.floor(Math.random() * available.length)];
+}
+
 /**
  * Creates a brand-new Room under a freshly generated Room Code, retrying
  * with a different code on the rare collision. The Firestore security
@@ -33,8 +44,14 @@ function randomRoomCode(): string {
 export async function createRoom(
   playerId: string,
   playerName: string,
+  mode: RoomMode,
 ): Promise<string> {
   let lastError: unknown;
+
+  // In experienced mode the host (the only player who exists yet) gets a
+  // random Piece immediately, same as anyone else joining an experienced
+  // room. In beginner mode nobody has a Piece until they pick one.
+  const pieceId = mode === 'experienced' ? pickAvailablePiece([]) : null;
 
   for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt++) {
     const code = randomRoomCode();
@@ -43,8 +60,9 @@ export async function createRoom(
         code,
         createdAt: serverTimestamp(),
         hostId: playerId,
+        mode,
         players: {
-          [playerId]: { name: playerName, joinedAt: serverTimestamp() },
+          [playerId]: { name: playerName, joinedAt: serverTimestamp(), pieceId },
         },
       });
       return code;
@@ -61,7 +79,7 @@ export async function createRoom(
     : new Error('Could not create a room, please try again.');
 }
 
-/** Joins an existing Room. Throws if no room has that code. */
+/** Joins an existing Room. Throws if no room has that code. In experienced mode this also assigns a random unclaimed Piece; in beginner mode the player picks their own later (see choosePiece). */
 export async function joinRoom(
   roomCode: string,
   playerId: string,
@@ -73,11 +91,41 @@ export async function joinRoom(
     throw new Error(`No room found with code "${roomCode}".`);
   }
 
+  const room = snapshot.data() as Room;
+  const claimedPieceIds = Object.values(room.players).map((player) => player.pieceId);
+  const pieceId = room.mode === 'experienced' ? pickAvailablePiece(claimedPieceIds) : null;
+
   await updateDoc(roomRef, {
     [`players.${playerId}`]: {
       name: playerName,
       joinedAt: serverTimestamp(),
+      pieceId,
     },
+  });
+}
+
+/** Beginner mode: the player picks their own Piece (its name/title only - GameBoard.tsx/LobbyScreen.tsx never show the power or win condition before the game starts). Throws if someone else already claimed it. */
+export async function choosePiece(
+  roomCode: string,
+  playerId: string,
+  pieceId: PieceId,
+): Promise<void> {
+  const roomRef = doc(db, 'rooms', roomCode);
+  const snapshot = await getDoc(roomRef);
+  if (!snapshot.exists()) {
+    throw new Error(`No room found with code "${roomCode}".`);
+  }
+
+  const room = snapshot.data() as Room;
+  const alreadyClaimed = Object.entries(room.players).some(
+    ([id, player]) => id !== playerId && player.pieceId === pieceId,
+  );
+  if (alreadyClaimed) {
+    throw new Error('Someone already picked that Piece.');
+  }
+
+  await updateDoc(roomRef, {
+    [`players.${playerId}.pieceId`]: pieceId,
   });
 }
 

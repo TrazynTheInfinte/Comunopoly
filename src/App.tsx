@@ -8,6 +8,7 @@ import {
   storeName,
 } from './lib/playerIdentity';
 import { useVersionWatcher } from './lib/versionWatcher';
+import type { RoomMode } from './types/room';
 
 type View = 'landing' | 'name-entry' | 'lobby';
 type Mode = 'create' | 'join';
@@ -21,6 +22,7 @@ function App() {
 
   const [view, setView] = useState<View>('landing');
   const [mode, setMode] = useState<Mode>('join');
+  const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
   const [name, setName] = useState(() => getStoredName());
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [activeRoomCode, setActiveRoomCode] = useState('');
@@ -52,7 +54,7 @@ function App() {
 
       const roomCode =
         mode === 'create'
-          ? await createRoom(playerId, trimmedName)
+          ? await createRoom(playerId, trimmedName, roomMode)
           : await joinRoomAndReturnCode(roomCodeInput, trimmedName);
 
       storeName(trimmedName);
@@ -119,6 +121,30 @@ function App() {
                 required
               />
             </label>
+          )}
+
+          {mode === 'create' && (
+            <fieldset className="room-mode-picker">
+              <legend>Piece assignment</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="roomMode"
+                  checked={roomMode === 'experienced'}
+                  onChange={() => setRoomMode('experienced')}
+                />
+                Experienced - everyone gets a random Piece automatically
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="roomMode"
+                  checked={roomMode === 'beginner'}
+                  onChange={() => setRoomMode('beginner')}
+                />
+                Beginner - everyone picks their own (without seeing its power)
+              </label>
+            </fieldset>
           )}
 
           {error && <p className="error">{error}</p>}
