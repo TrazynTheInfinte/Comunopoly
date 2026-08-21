@@ -6,14 +6,16 @@ import {
   acceptVolgaOfferAndSync,
   acknowledgeCardAndSync,
   buyPropertyAndSync,
+  claimTrotskyHidingSpotAndSync,
   declineVolgaOfferAndSync,
   endTurnAndSync,
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
 import type { Room } from '../types/room';
+import CardTargetPrompt from './CardTargetPrompt';
 import DevPanel from './DevPanel';
-import PropertiesPanel from './PropertiesPanel';
+import Hand from './Hand';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -46,6 +48,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       : null;
   const pendingCard =
     game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
+  const me = game.players[playerId];
+  const canClaimTrotskyHidingSpot =
+    isMyTurn && game.trotskyHidingSpot !== null && me?.position === game.trotskyHidingSpot;
 
   const isDevPanelUnlocked =
     playerId === room.hostId &&
@@ -153,7 +158,24 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         </div>
       )}
 
-      <PropertiesPanel ownedTileIds={game.players[playerId]?.ownedTileIds ?? []} />
+      {isMyTurn && game.pendingDecision?.type === 'cardTarget' && (
+        <CardTargetPrompt
+          cardId={game.pendingDecision.cardId}
+          room={room}
+          roomCode={roomCode}
+          playerId={playerId}
+          game={game}
+        />
+      )}
+
+      {canClaimTrotskyHidingSpot && (
+        <div className="purchase-prompt card-prompt">
+          <p>Claim to have found Trotsky's hiding place?</p>
+          <button onClick={() => claimTrotskyHidingSpotAndSync(roomCode, game)}>
+            Claim It
+          </button>
+        </div>
+      )}
 
       <ul className="event-log">
         {game.log
@@ -167,6 +189,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       {isDevPanelUnlocked && (
         <DevPanel room={room} roomCode={roomCode} game={game} />
       )}
+
+      <Hand room={room} roomCode={roomCode} playerId={playerId} game={game} />
     </main>
   );
 }

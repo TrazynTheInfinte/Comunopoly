@@ -5,14 +5,19 @@ import {
   acceptVolgaOffer,
   acknowledgeCard,
   buyProperty,
+  claimTrotskyHidingSpot,
   createInitialGameState,
   declineVolgaOffer,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
   endTurn,
+  resolveCardTarget,
   rollDice,
   skipPurchase,
+  useDenounceCollaborators,
+  useSecretInformant,
+  useShowTrial,
 } from '../game/engine';
 
 // Every function here follows the same shape: take the game state this
@@ -58,6 +63,46 @@ export async function declineVolgaOfferAndSync(roomCode: string, game: GameState
 
 export async function acknowledgeCardAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, acknowledgeCard(game));
+}
+
+export async function resolveCardTargetAndSync(
+  roomCode: string,
+  game: GameState,
+  selection: { targetPlayerId?: string; targetTileId?: number },
+) {
+  await writeGameState(roomCode, resolveCardTarget(game, selection));
+}
+
+export async function claimTrotskyHidingSpotAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, claimTrotskyHidingSpot(game));
+}
+
+export async function useDenounceCollaboratorsAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  targetPlayerId: string,
+) {
+  await writeGameState(roomCode, useDenounceCollaborators(game, playerId, targetPlayerId));
+}
+
+export async function useSecretInformantAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  targetPlayerId: string,
+) {
+  await writeGameState(roomCode, useSecretInformant(game, playerId, targetPlayerId));
+}
+
+export async function useShowTrialAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  targetPlayerId: string,
+  verdict: 'release' | 'disappear',
+) {
+  await writeGameState(roomCode, useShowTrial(game, playerId, targetPlayerId, verdict));
 }
 
 export async function devSetRoublesAndSync(

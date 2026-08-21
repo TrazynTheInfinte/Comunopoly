@@ -1,0 +1,87 @@
+.hand {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+  background: var(--color-paper);
+  border-top: 3px solid var(--color-black);
+}
+
+.hand-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 6rem;
+  max-width: 6rem;
+  border: 2px solid var(--color-black);
+  background: var(--color-grey-light);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    max-width 0.15s ease,
+    min-width 0.15s ease;
+}
+
+.hand-card:hover {
+  transform: translateY(-0.3rem);
+}
+
+.hand-card.is-expanded {
+  min-width: 12rem;
+  max-width: 16rem;
+  transform: translateY(-0.5rem);
+  border-color: var(--color-red);
+  z-index: 1;
+}
+
+.hand-card-special {
+  padding: 0;
+}
+
+.hand-card-header {
+  all: unset;
+  cursor: pointer;
+  padding: 0.5em;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hand-card-name {
+  display: block;
+  padding: 0.5em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hand-card-special .hand-card-name {
+  padding: 0;
+}
+
+.hand-card-detail {
+  display: block;
+  padding: 0 0.5em 0.5em;
+  color: var(--color-grey);
+  line-height: 1.3;
+}
+
+.hand-card-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.hand-card-action select {
+  font-family: var(--font-mono);
+  border: 2px solid var(--color-black);
+  padding: 0.2em;
+  background: var(--color-paper);
+}
