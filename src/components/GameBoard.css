@@ -22,6 +22,13 @@
   color: var(--color-grey);
 }
 
+.trotsky-banner {
+  font-size: 0.8rem;
+  color: var(--color-red);
+  border: 2px dashed var(--color-red);
+  padding: 0.5em;
+}
+
 .player-summary {
   list-style: none;
   display: flex;

@@ -132,13 +132,15 @@ export interface GamePlayerState {
  * A decision the current player must make before their turn can end:
  * buy the property they just landed on, give away everything to claim
  * an unowned Volga, pick a target for a card that needs one (Siege of
- * Stalingrad, Double Agent, Phone Call from Stalin), or acknowledge a
- * drawn Communist Test/No Chance card before play continues.
+ * Stalingrad, Double Agent, Phone Call from Stalin), answer NKVD's
+ * doctrine question, or acknowledge a drawn Communist Test/No Chance
+ * card before play continues.
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
   | { type: 'volgaOffer'; tileId: number }
   | { type: 'cardTarget'; cardId: string }
+  | { type: 'nkvdQuiz'; questionIndex: number }
   | { type: 'cardDrawn'; cardId: string };
 
 export interface GameState {

@@ -4,6 +4,7 @@ import type { CardDeck, GameState, PieceId } from '../types/game';
 import {
   acceptVolgaOffer,
   acknowledgeCard,
+  answerNkvdQuiz,
   buyProperty,
   claimTrotskyHidingSpot,
   createInitialGameState,
@@ -77,6 +78,10 @@ export async function resolveCardTargetAndSync(
 
 export async function claimTrotskyHidingSpotAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, claimTrotskyHidingSpot(game));
+}
+
+export async function answerNkvdQuizAndSync(roomCode: string, game: GameState, answerText: string) {
+  await writeGameState(roomCode, answerNkvdQuiz(game, answerText));
 }
 
 export async function useDenounceCollaboratorsAndSync(

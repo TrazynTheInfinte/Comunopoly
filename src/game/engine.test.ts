@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   acceptVolgaOffer,
   acknowledgeCard,
+  answerNkvdQuiz,
   buyProperty,
   claimTrotskyHidingSpot,
   createInitialGameState,
@@ -19,6 +20,7 @@ import {
   useShowTrial,
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
+import { getTile } from '../data/board';
 import type { GameState } from '../types/game';
 
 const PLAYERS = [
@@ -830,14 +832,53 @@ describe('newly automated cards', () => {
     expect(state.players.p1.hidingPosition).toBeNull();
   });
 
-  it('"NKVD" (the card) jails on a low die roll, does nothing on a high one', () => {
+  it('"Go Into Hiding!" ends the turn outright, even if the landing roll was doubles', () => {
     let state = createInitialGameState(PLAYERS);
-    state = withPosition(state, 'p1', 0);
-    state = devSetForcedCard(state, 'nkvd');
-    state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // -> rolls a 1, "wrong answer"
+    state = withPosition(state, 'p1', 0); // 0 + 4 -> tile 4, a doubles roll
+    state = devSetForcedCard(state, 'goIntoHiding');
+    state = devSetForcedRoll(state, [2, 2]);
+    state = rollDice(state);
 
-    expect(state.players.p1.inJail).toBe(true);
+    expect(state.lastRollWasDoubles).toBe(false);
+  });
+
+  describe('"NKVD" (the card)', () => {
+    it('opens a quiz decision with a specific question, instead of resolving immediately', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'nkvd');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0); // picks question index 0
+
+      expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0 });
+      expect(state.players.p1.inJail).toBe(false);
+    });
+
+    it('answering correctly (loosely normalized) just moves on', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'nkvd');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0); // question 0: "...True Grit?" -> "John Wayne"
+
+      state = answerNkvdQuiz(state, "  john wayne.  "); // trimmed/lowercased/punctuation-stripped
+
+      expect(state.players.p1.inJail).toBe(false);
+      expect(state.pendingDecision).toBeNull();
+    });
+
+    it('answering incorrectly sends the player to jail', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'nkvd');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0);
+
+      state = answerNkvdQuiz(state, 'Clint Eastwood');
+
+      expect(state.players.p1.inJail).toBe(true);
+      expect(state.pendingDecision).toBeNull();
+    });
   });
 
   it('"Collectivization Drive!" redistributes money evenly and conserves total tradeable property', () => {
@@ -953,7 +994,7 @@ describe('newly automated cards', () => {
     expect(state.players.p1.roubles).toBe(1000 + 10); // Commissar's half of the toll
   });
 
-  it('"Fourth International" secretly assigns Trotsky and a hiding spot, with no clue in the log', () => {
+  it('"Fourth International" secretly assigns Trotsky, but publishes the hiding spot in the log', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'fourthInternational');
@@ -963,6 +1004,12 @@ describe('newly automated cards', () => {
     expect(state.players.p1.isTrotsky).toBe(true);
     expect(state.players.p2.isTrotsky).toBe(false);
     expect(state.trotskyHidingSpot).toBe(1);
+
+    // The location is meant to be public per the rules; only who is
+    // Trotsky stays secret - no player name/id should appear in the log.
+    const locationLog = state.log.find((entry) => entry.includes('hidden Trotsky'));
+    expect(locationLog).toContain(getTile(1).name);
+    expect(state.log.some((entry) => entry.includes('p1') || entry.includes('p2'))).toBe(false);
   });
 
   it('claiming the Trotsky hiding spot Disappears the claimant either way', () => {

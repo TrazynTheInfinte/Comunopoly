@@ -4,6 +4,7 @@ import {
   NO_CHANCE_CARDS,
   findCard,
 } from '../data/cards';
+import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
 import type { CardDeck, GameState, GamePlayerState, PieceId } from '../types/game';
 
 const STARTING_ROUBLES = 1000;
@@ -427,27 +428,24 @@ function nomenklaturaEffect(
   });
 }
 
-/** Go Into Hiding: miss 3 turns, and mark the current tile as a hiding spot - another player landing there exactly Disappears this player early (see the check in moveAndResolve). */
+/**
+ * Go Into Hiding: miss 3 turns, and mark the current tile as a hiding
+ * spot - another player landing there exactly Disappears this player
+ * early (see the check in moveAndResolve). Also ends the turn outright,
+ * even if the roll that landed here was doubles - otherwise "miss your
+ * next 3 turns" would perversely let them keep moving right now.
+ */
 function goIntoHidingEffect(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
   return {
     ...state,
+    lastRollWasDoubles: false,
     players: { ...state.players, [playerId]: { ...player, turnsToSkip: 3, hidingPosition: player.position } },
   };
 }
 
-/**
- * NKVD (the card, distinct from the NKVD HQ tile): "quizzed on doctrine,
- * wrong answers send you to jail." There's no real question bank to quiz
- * players from, so this is automated as a simple coin-flip-style die
- * roll standing in for "did you answer correctly."
- */
-function nkvdQuizEffect(state: GameState, playerId: string, rng: () => number): GameState {
-  const roll = rollOneDie(rng);
-  if (roll <= 3) {
-    return logEvent(sendToJail(state, playerId), `Answered the doctrine question wrong (rolled ${roll}) - sent to jail.`);
-  }
-  return logEvent(state, `Answered the doctrine question correctly (rolled ${roll}).`);
+function normalizeAnswer(text: string): string {
+  return text.trim().toLowerCase().replace(/[.,!?]/g, '');
 }
 
 /**
@@ -538,10 +536,13 @@ function bestsellerEffect(state: GameState, playerId: string, rng: () => number)
 }
 
 /**
- * Fourth International: secretly picks one player to be Trotsky and one
- * property tile as "the hiding place" (standing in for a human Stalin
- * choosing it). No log line reveals either - see the NOTE on
- * GamePlayerState.isTrotsky for why this is only a "soft" secret.
+ * Fourth International: secretly picks one player to be Trotsky, and
+ * one property tile as "the hiding place" - standing in for a human
+ * Stalin choosing it. Per the rules, the location IS meant to be public
+ * ("Stalin will determine a location on the board"); only WHO is
+ * Trotsky stays secret, so this logs the location but never the
+ * identity - see the NOTE on GamePlayerState.isTrotsky for why even
+ * that is only a "soft" secret.
  */
 function fourthInternationalEffect(state: GameState, _playerId: string, rng: () => number): GameState {
   const trotskyId = state.turnOrder[Math.floor(rng() * state.turnOrder.length)];
@@ -550,7 +551,10 @@ function fourthInternationalEffect(state: GameState, _playerId: string, rng: () 
     players[id] = { ...players[id], isTrotsky: id === trotskyId };
   }
   const trotskyHidingSpot = PROPERTY_TILE_IDS[Math.floor(rng() * PROPERTY_TILE_IDS.length)];
-  return { ...state, players, trotskyHidingSpot };
+  return logEvent(
+    { ...state, players, trotskyHidingSpot },
+    `Stalin has hidden Trotsky's location: ${getTile(trotskyHidingSpot).name}. One player secretly knows they're Trotsky.`,
+  );
 }
 
 // Cards that need the player to pick a target (an opponent, a property,
@@ -576,7 +580,6 @@ const CARD_EFFECTS: Record<
   blacklist: (state, playerId) => setBlacklisted(state, playerId),
   nomenklatura: (state, playerId, rng) => nomenklaturaEffect(state, playerId, rng),
   goIntoHiding: (state, playerId) => goIntoHidingEffect(state, playerId),
-  nkvd: (state, playerId, rng) => nkvdQuizEffect(state, playerId, rng),
   collectivizationDrive: (state, playerId, rng) => collectivizationDriveEffect(state, playerId, rng),
   greatPurge: (state, playerId, rng) => greatPurgeEffect(state, playerId, rng),
   telegraphUnion: (state, playerId) => ({ ...state, commissarPlayerId: playerId }),
@@ -622,6 +625,11 @@ function resolveCardLanding(
     }
     next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
     return { ...next, pendingDecision: { type: 'cardTarget', cardId } };
+  }
+
+  if (cardId === 'nkvd') {
+    const questionIndex = Math.floor(rng() * NKVD_QUESTIONS.length);
+    return { ...next, pendingDecision: { type: 'nkvdQuiz', questionIndex } };
   }
 
   if (CARDS_NEEDING_TARGET.has(cardId)) {
@@ -1103,6 +1111,22 @@ export function useShowTrial(
   return logEvent(
     { ...state, players: { ...state.players, [targetPlayerId]: { ...target, inJail: false } } },
     'Released from jail by a Show Trial.',
+  );
+}
+
+/** Answers NKVD's doctrine question. A (loosely normalized) correct match just moves on; anything else sends the current player to jail. */
+export function answerNkvdQuiz(state: GameState, answerText: string): GameState {
+  if (state.pendingDecision?.type !== 'nkvdQuiz') return state;
+  const playerId = currentPlayerId(state);
+  const question = NKVD_QUESTIONS[state.pendingDecision.questionIndex];
+
+  const next: GameState = { ...state, pendingDecision: null };
+  if (normalizeAnswer(answerText) === normalizeAnswer(question.answer)) {
+    return logEvent(next, `Answered the doctrine question correctly.`);
+  }
+  return logEvent(
+    sendToJail(next, playerId),
+    `Answered "${answerText}" - wrong (the answer was "${question.answer}") - sent to jail.`,
   );
 }
 

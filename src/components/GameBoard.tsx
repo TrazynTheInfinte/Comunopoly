@@ -16,6 +16,7 @@ import type { Room } from '../types/room';
 import CardTargetPrompt from './CardTargetPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
+import NkvdQuizPrompt from './NkvdQuizPrompt';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -77,6 +78,12 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           <p className="dice-result">
             Rolled {game.lastRoll[0]} + {game.lastRoll[1]}
             {game.lastRollWasDoubles ? ' (doubles!)' : ''}
+          </p>
+        )}
+        {game.trotskyHidingSpot !== null && (
+          <p className="trotsky-banner">
+            Trotsky is hiding near {getTile(game.trotskyHidingSpot).name} - land there and claim it
+            to find out who they are! (Whoever claims it Disappears either way.)
           </p>
         )}
       </section>
@@ -164,6 +171,14 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           room={room}
           roomCode={roomCode}
           playerId={playerId}
+          game={game}
+        />
+      )}
+
+      {isMyTurn && game.pendingDecision?.type === 'nkvdQuiz' && (
+        <NkvdQuizPrompt
+          questionIndex={game.pendingDecision.questionIndex}
+          roomCode={roomCode}
           game={game}
         />
       )}
