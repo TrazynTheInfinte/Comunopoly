@@ -3,10 +3,12 @@ import { db } from './firebase';
 import type { CardDeck, GameState, PieceId } from '../types/game';
 import {
   acceptVolgaOffer,
+  accuseOfTrotsky,
   acknowledgeCard,
   answerNkvdQuiz,
   buyProperty,
-  claimTrotskyHidingSpot,
+  callShowTrial,
+  castShowTrialVote,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -20,7 +22,6 @@ import {
   skipPurchase,
   useDenounceCollaborators,
   useSecretInformant,
-  useShowTrial,
 } from '../game/engine';
 
 // Every function here follows the same shape: take the game state this
@@ -76,8 +77,8 @@ export async function resolveCardTargetAndSync(
   await writeGameState(roomCode, resolveCardTarget(game, selection));
 }
 
-export async function claimTrotskyHidingSpotAndSync(roomCode: string, game: GameState) {
-  await writeGameState(roomCode, claimTrotskyHidingSpot(game));
+export async function accuseOfTrotskyAndSync(roomCode: string, game: GameState, accusedId: string) {
+  await writeGameState(roomCode, accuseOfTrotsky(game, accusedId));
 }
 
 export async function answerNkvdQuizAndSync(roomCode: string, game: GameState, answerText: string) {
@@ -102,14 +103,22 @@ export async function useSecretInformantAndSync(
   await writeGameState(roomCode, useSecretInformant(game, playerId, targetPlayerId));
 }
 
-export async function useShowTrialAndSync(
+export async function callShowTrialAndSync(
   roomCode: string,
   game: GameState,
   playerId: string,
   targetPlayerId: string,
-  verdict: 'release' | 'disappear',
 ) {
-  await writeGameState(roomCode, useShowTrial(game, playerId, targetPlayerId, verdict));
+  await writeGameState(roomCode, callShowTrial(game, playerId, targetPlayerId));
+}
+
+export async function castShowTrialVoteAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  vote: 'release' | 'disappear',
+) {
+  await writeGameState(roomCode, castShowTrialVote(game, playerId, vote));
 }
 
 export async function devSetRoublesAndSync(

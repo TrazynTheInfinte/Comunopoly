@@ -76,6 +76,7 @@ export function createInitialGameState(
     closedTileIds: [],
     phoneCallTraps: [],
     trotskyHidingSpot: null,
+    activeVote: null,
     log: ['The game begins.'],
   };
 }
@@ -198,6 +199,10 @@ function disappearStub(
   };
   if (next.commissarPlayerId === playerId) {
     next = { ...next, commissarPlayerId: null, closedTileIds: [] };
+  }
+  if (next.activeVote && (next.activeVote.callerId === playerId || next.activeVote.targetPlayerId === playerId)) {
+    // The caller or the person on trial Disappeared some other way mid-vote - abort it rather than leave a dangling reference.
+    next = { ...next, activeVote: null };
   }
   return logEvent(
     next,
@@ -553,7 +558,7 @@ function fourthInternationalEffect(state: GameState, _playerId: string, rng: () 
   const trotskyHidingSpot = PROPERTY_TILE_IDS[Math.floor(rng() * PROPERTY_TILE_IDS.length)];
   return logEvent(
     { ...state, players, trotskyHidingSpot },
-    `Stalin has hidden Trotsky's location: ${getTile(trotskyHidingSpot).name}. One player secretly knows they're Trotsky.`,
+    `Fourth International: the marked location is ${getTile(trotskyHidingSpot).name}. Land there to accuse someone of being Trotsky.`,
   );
 }
 
@@ -1093,24 +1098,90 @@ export function useSecretInformant(
   return logEvent(next, 'Used Secret Informant to send someone to jail.');
 }
 
-/** Uses a held Show Trial card: only on a jailed target, either releases or Disappears them. The card itself isn't consumed - "at any point" implies it's reusable. */
-export function useShowTrial(
+/**
+ * Uses a held Show Trial card to call a vote on a jailed player (who can
+ * be the caller themselves - being in jail is exactly when you'd want
+ * to call this). Consumes the card immediately, since calling the vote
+ * IS "using" it - it's a one-shot card, not a reusable one. Every
+ * player then votes release/disappear via castShowTrialVote(); the
+ * caller's own vote counts double, per the card's text.
+ */
+export function callShowTrial(
   state: GameState,
   playerId: string,
   targetPlayerId: string,
-  verdict: 'release' | 'disappear',
 ): GameState {
   const player = state.players[playerId];
   const target = state.players[targetPlayerId];
   if (!player.heldCardIds.includes('showTrial')) return state;
   if (!target || !target.inJail) return state;
+  if (state.activeVote) return state; // one trial at a time
 
-  if (verdict === 'disappear') {
-    return disappearStub(state, targetPlayerId, 'Disappeared by a Show Trial');
+  const next: GameState = {
+    ...state,
+    activeVote: { callerId: playerId, targetPlayerId, votes: {} },
+    players: {
+      ...state.players,
+      [playerId]: { ...player, heldCardIds: player.heldCardIds.filter((id) => id !== 'showTrial') },
+    },
+  };
+  return logEvent(next, 'A Show Trial has been called - everyone gets a vote.');
+}
+
+/**
+ * Casts (or changes) one player's vote in the active Show Trial. Once
+ * everyone has voted, tallies them (the caller's vote counts double) and
+ * resolves immediately. A tie falls back to a coin flip, standing in for
+ * "Stalin breaks ties" since there's no human Stalin to ask.
+ */
+export function castShowTrialVote(
+  state: GameState,
+  playerId: string,
+  vote: 'release' | 'disappear',
+  rng: () => number = Math.random,
+): GameState {
+  if (!state.activeVote || !state.players[playerId]) return state;
+
+  let next: GameState = {
+    ...state,
+    activeVote: { ...state.activeVote, votes: { ...state.activeVote.votes, [playerId]: vote } },
+  };
+
+  if (Object.keys(next.activeVote!.votes).length === next.turnOrder.length) {
+    next = resolveShowTrialVote(next, rng);
   }
+  return next;
+}
+
+function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
+  const activeVote = state.activeVote;
+  if (!activeVote) return state;
+
+  let releaseWeight = 0;
+  let disappearWeight = 0;
+  for (const [voterId, choice] of Object.entries(activeVote.votes)) {
+    const weight = voterId === activeVote.callerId ? 2 : 1;
+    if (choice === 'release') releaseWeight += weight;
+    else disappearWeight += weight;
+  }
+
+  const verdict: 'release' | 'disappear' =
+    releaseWeight === disappearWeight
+      ? rng() < 0.5
+        ? 'release'
+        : 'disappear' // tie - "Stalin breaks ties," standing in with a coin flip
+      : releaseWeight > disappearWeight
+        ? 'release'
+        : 'disappear';
+
+  const next: GameState = { ...state, activeVote: null };
+  if (verdict === 'disappear') {
+    return disappearStub(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
+  }
+  const target = next.players[activeVote.targetPlayerId];
   return logEvent(
-    { ...state, players: { ...state.players, [targetPlayerId]: { ...target, inJail: false } } },
-    'Released from jail by a Show Trial.',
+    { ...next, players: { ...next.players, [activeVote.targetPlayerId]: { ...target, inJail: false } } },
+    'Released from jail by a Show Trial vote.',
   );
 }
 
@@ -1131,31 +1202,32 @@ export function answerNkvdQuiz(state: GameState, answerText: string): GameState 
 }
 
 /**
- * Claims to have found Trotsky's hiding place (Fourth International).
- * Only works if the current player is standing exactly on the secret
- * spot. Per the source card text, BOTH outcomes Disappear the claimant
- * - "If they are not Trotsky, they Disappear. If they are Trotsky, they
- * Disappear." Implemented literally even though that reads oddly
- * (possibly a typo in the original); we have no grounds to invent a
- * different resolution.
+ * Accuses a player of being Trotsky (Fourth International) - a house
+ * rule variant requested in place of the source card's literal (and
+ * oddly self-defeating) "the claimant Disappears either way" text. Only
+ * works if the current player is standing exactly on the public hiding
+ * spot. Guessing right exposes and Disappears the accused; guessing
+ * wrong sends the accuser to jail instead.
  */
-export function claimTrotskyHidingSpot(state: GameState): GameState {
+export function accuseOfTrotsky(state: GameState, accusedId: string): GameState {
   const playerId = currentPlayerId(state);
   const player = state.players[playerId];
+  const accused = state.players[accusedId];
   if (state.trotskyHidingSpot === null || player.position !== state.trotskyHidingSpot) {
     return state;
   }
+  if (!accused || accusedId === playerId) return state;
 
-  const wasTrotsky = player.isTrotsky;
+  const wasTrotsky = accused.isTrotsky;
   let next: GameState = { ...state, trotskyHidingSpot: null };
   for (const id of next.turnOrder) {
     next = { ...next, players: { ...next.players, [id]: { ...next.players[id], isTrotsky: false } } };
   }
-  return disappearStub(
-    next,
-    playerId,
-    wasTrotsky ? 'was Trotsky and got caught' : 'falsely claimed to have found Trotsky',
-  );
+
+  if (wasTrotsky) {
+    return disappearStub(next, accusedId, 'was correctly accused of being Trotsky');
+  }
+  return logEvent(sendToJail(next, playerId), 'The accusation was wrong - sent to jail.');
 }
 
 /**

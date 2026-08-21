@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { getTile } from '../data/board';
 import { findCard } from '../data/cards';
 import {
+  callShowTrialAndSync,
   useDenounceCollaboratorsAndSync,
   useSecretInformantAndSync,
-  useShowTrialAndSync,
 } from '../lib/gameSync';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
@@ -103,30 +103,37 @@ function HandCardActions({ cardId, room, roomCode, playerId, game, onUsed }: Han
   const me = game.players[playerId];
   const otherPlayers = game.turnOrder.filter((id) => id !== playerId);
 
+  // Show Trial can put yourself on trial too (that's exactly when you'd
+  // want to call it), so its target pool includes the holder, unlike
+  // Secret Informant/Denounce Your Collaborators which only ever act on
+  // someone else.
   const relevantTargets =
     cardId === 'secretInformant'
       ? otherPlayers.filter((id) => game.players[id].position === me.position)
       : cardId === 'showTrial'
-        ? otherPlayers.filter((id) => game.players[id].inJail)
+        ? game.turnOrder.filter((id) => game.players[id].inJail)
         : otherPlayers;
 
   const [targetId, setTargetId] = useState(relevantTargets[0] ?? '');
   const effectiveTargetId = relevantTargets.includes(targetId) ? targetId : (relevantTargets[0] ?? '');
 
-  async function use(verdict?: 'release' | 'disappear') {
+  async function use() {
     if (!effectiveTargetId) return;
     if (cardId === 'denounceCollaborators') {
       await useDenounceCollaboratorsAndSync(roomCode, game, playerId, effectiveTargetId);
     } else if (cardId === 'secretInformant') {
       await useSecretInformantAndSync(roomCode, game, playerId, effectiveTargetId);
-    } else if (cardId === 'showTrial' && verdict) {
-      await useShowTrialAndSync(roomCode, game, playerId, effectiveTargetId, verdict);
+    } else if (cardId === 'showTrial') {
+      await callShowTrialAndSync(roomCode, game, playerId, effectiveTargetId);
     }
     onUsed();
   }
 
   if (cardId === 'denounceCollaborators' && !me.inJail) {
     return <p className="hint">Usable while you're in jail.</p>;
+  }
+  if (cardId === 'showTrial' && game.activeVote) {
+    return <p className="hint">A Show Trial is already in progress.</p>;
   }
   if (cardId !== 'denounceCollaborators' && relevantTargets.length === 0) {
     return (
@@ -143,7 +150,7 @@ function HandCardActions({ cardId, room, roomCode, playerId, game, onUsed }: Han
       <select value={effectiveTargetId} onChange={(event) => setTargetId(event.target.value)}>
         {relevantTargets.map((id) => (
           <option key={id} value={id}>
-            {room.players[id]?.name}
+            {id === playerId ? `${room.players[id]?.name} (you)` : room.players[id]?.name}
           </option>
         ))}
       </select>
@@ -158,14 +165,9 @@ function HandCardActions({ cardId, room, roomCode, playerId, game, onUsed }: Han
         </button>
       )}
       {cardId === 'showTrial' && (
-        <>
-          <button type="button" onClick={() => use('release')}>
-            Release
-          </button>
-          <button type="button" onClick={() => use('disappear')}>
-            Disappear
-          </button>
-        </>
+        <button type="button" onClick={() => use()}>
+          Call Vote
+        </button>
       )}
     </div>
   );

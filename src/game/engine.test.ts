@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   acceptVolgaOffer,
+  accuseOfTrotsky,
   acknowledgeCard,
   answerNkvdQuiz,
   buyProperty,
-  claimTrotskyHidingSpot,
+  callShowTrial,
+  castShowTrialVote,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -17,7 +19,6 @@ import {
   skipPurchase,
   useDenounceCollaborators,
   useSecretInformant,
-  useShowTrial,
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import { getTile } from '../data/board';
@@ -1007,25 +1008,9 @@ describe('newly automated cards', () => {
 
     // The location is meant to be public per the rules; only who is
     // Trotsky stays secret - no player name/id should appear in the log.
-    const locationLog = state.log.find((entry) => entry.includes('hidden Trotsky'));
+    const locationLog = state.log.find((entry) => entry.includes('marked location is'));
     expect(locationLog).toContain(getTile(1).name);
     expect(state.log.some((entry) => entry.includes('p1') || entry.includes('p2'))).toBe(false);
-  });
-
-  it('claiming the Trotsky hiding spot Disappears the claimant either way', () => {
-    let state = createInitialGameState(PLAYERS);
-    state = withPosition(state, 'p1', 0);
-    state = devSetForcedCard(state, 'fourthInternational');
-    state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // p1 is Trotsky, hiding spot = tile 1
-    state = acknowledgeCard(state);
-
-    state = withPosition(state, 'p1', 1);
-    state = claimTrotskyHidingSpot(state);
-
-    expect(state.players.p1.roubles).toBe(1000); // reset by Disappear
-    expect(state.trotskyHidingSpot).toBeNull();
-    expect(state.players.p1.isTrotsky).toBe(false);
   });
 
   it('"Siege of Stalingrad" seizes a target opponent property, locking it permanently', () => {
@@ -1171,25 +1156,123 @@ describe('held cards (hand)', () => {
     expect(state.communistTestDrawPile[state.communistTestDrawPile.length - 1]).toBe('secretInformant');
   });
 
-  it('Show Trial releases or Disappears a jailed target and stays in hand either way', () => {
+  describe('Show Trial', () => {
+    it('is usable even when the caller is the one in jail (can be your own trial)', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = { ...state, players: { ...state.players, p1: { ...state.players.p1, inJail: true } } };
+
+      state = callShowTrial(state, 'p1', 'p1');
+
+      expect(state.activeVote).toEqual({ callerId: 'p1', targetPlayerId: 'p1', votes: {} });
+    });
+
+    it("consumes the card from the caller's hand immediately when called", () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
+
+      state = callShowTrial(state, 'p1', 'p2');
+
+      expect(state.players.p1.heldCardIds).not.toContain('showTrial');
+    });
+
+    it("the caller's vote counts double, deciding the outcome once everyone has voted", () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
+      state = callShowTrial(state, 'p1', 'p2');
+
+      state = castShowTrialVote(state, 'p2', 'release'); // weight 1
+      state = castShowTrialVote(state, 'p1', 'disappear'); // caller, weight 2 - decides it
+
+      expect(state.activeVote).toBeNull();
+      expect(state.players.p2.roubles).toBe(1000); // Disappeared (reset)
+    });
+
+    it('a tied vote falls back to a coin flip', () => {
+      let state = createInitialGameState([
+        { playerId: 'p1', pieceId: 'boot' },
+        { playerId: 'p2', pieceId: 'battleship' },
+        { playerId: 'p3', pieceId: 'car' },
+      ]);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = { ...state, players: { ...state.players, p3: { ...state.players.p3, inJail: true } } };
+      state = callShowTrial(state, 'p1', 'p3'); // p1 is caller (weight 2)
+
+      // p1 votes release (weight 2); p2 + target p3 both vote disappear (weight 1 each = 2) -> tie
+      state = castShowTrialVote(state, 'p2', 'disappear');
+      state = castShowTrialVote(state, 'p3', 'disappear');
+      state = castShowTrialVote(state, 'p1', 'release', () => 0.9); // coin flip forced to "disappear"
+
+      expect(state.players.p3.roubles).toBe(1000); // disappear won the coin flip
+    });
+  });
+});
+
+describe('Fourth International accusation (house rule)', () => {
+  it('exposes and Disappears the accused when the accusation is correct', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 0);
-    state = devSetForcedCard(state, 'showTrial');
+    state = devSetForcedCard(state, 'fourthInternational');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state);
+    state = rollDice(state, () => 0); // p1 is Trotsky, hiding spot = tile 1
+    state = acknowledgeCard(state);
 
-    state = {
-      ...state,
-      players: { ...state.players, p2: { ...state.players.p2, inJail: true } },
-    };
+    state = withPosition(state, 'p2', 1);
+    state = { ...state, currentTurnIndex: 1 }; // p2's turn
+    state = accuseOfTrotsky(state, 'p1');
 
-    const released = useShowTrial(state, 'p1', 'p2', 'release');
-    expect(released.players.p2.inJail).toBe(false);
-    expect(released.players.p1.heldCardIds).toContain('showTrial'); // not consumed
+    expect(state.players.p1.roubles).toBe(1000); // Disappeared (reset)
+    expect(state.trotskyHidingSpot).toBeNull();
+  });
 
-    const disappeared = useShowTrial(state, 'p1', 'p2', 'disappear');
-    expect(disappeared.players.p2.roubles).toBe(1000);
-    expect(disappeared.players.p2.inJail).toBe(false);
+  it('sends the accuser to jail when the accusation is wrong', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' },
+      { playerId: 'p2', pieceId: 'battleship' },
+      { playerId: 'p3', pieceId: 'car' },
+    ]);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0); // p1 is Trotsky (turnOrder[0]), hiding spot = tile 1
+    state = acknowledgeCard(state);
+
+    state = withPosition(state, 'p2', 1);
+    state = { ...state, currentTurnIndex: 1 }; // p2's turn
+    state = accuseOfTrotsky(state, 'p3'); // wrong - p1 is actually Trotsky
+
+    expect(state.players.p2.inJail).toBe(true);
+    expect(state.trotskyHidingSpot).toBeNull();
+  });
+
+  it("refuses to let a player accuse themselves", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0);
+    state = acknowledgeCard(state);
+
+    state = withPosition(state, 'p2', 1);
+    state = { ...state, currentTurnIndex: 1 };
+    const before = state;
+    state = accuseOfTrotsky(state, 'p2');
+
+    expect(state).toBe(before);
   });
 });
 

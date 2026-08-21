@@ -173,8 +173,17 @@ export interface GameState {
   closedTileIds: number[];
   /** Phone Call from Stalin: properties a player was given for free that Disappear them if they ever land back on it. */
   phoneCallTraps: { playerId: string; tileId: number }[];
-  /** Fourth International: the board position "Stalin" secretly chose as Trotsky's hiding place - null when no Fourth International is currently active. */
+  /** Fourth International: the board position "Stalin" secretly chose as Trotsky's hiding place - null when no Fourth International is currently active. Public knowledge per the rules - shown in the UI, unlike who's actually Trotsky. */
   trotskyHidingSpot: number | null;
+  /** Show Trial: a vote in progress on whether to release or Disappear a jailed player. Runs independently of turns - any player can cast a vote at any time, not just the current one. Null when no vote is active. */
+  activeVote: ShowTrialVote | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
+}
+
+export interface ShowTrialVote {
+  /** The player who called the vote - their vote counts double. */
+  callerId: string;
+  targetPlayerId: string;
+  votes: Record<string, 'release' | 'disappear'>;
 }

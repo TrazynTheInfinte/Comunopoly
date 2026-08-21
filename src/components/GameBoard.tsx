@@ -4,9 +4,9 @@ import { STARTING_PIECES } from '../data/pieces';
 import { findCard } from '../data/cards';
 import {
   acceptVolgaOfferAndSync,
+  accuseOfTrotskyAndSync,
   acknowledgeCardAndSync,
   buyPropertyAndSync,
-  claimTrotskyHidingSpotAndSync,
   declineVolgaOfferAndSync,
   endTurnAndSync,
   rollDiceAndSync,
@@ -17,6 +17,7 @@ import CardTargetPrompt from './CardTargetPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
+import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -34,6 +35,7 @@ function pieceName(pieceId: string): string {
 // is a separate, later pass over just this component.
 function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
+  const [accusedId, setAccusedId] = useState('');
   const game = room.game;
 
   // RoomView only ever renders GameBoard once room.game exists, but
@@ -50,8 +52,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const pendingCard =
     game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
   const me = game.players[playerId];
-  const canClaimTrotskyHidingSpot =
+  const canAccuseOfTrotsky =
     isMyTurn && game.trotskyHidingSpot !== null && me?.position === game.trotskyHidingSpot;
+  const accusableOthers = game.turnOrder.filter((id) => id !== playerId);
+  const effectiveAccusedId = accusableOthers.includes(accusedId) ? accusedId : (accusableOthers[0] ?? '');
 
   const isDevPanelUnlocked =
     playerId === room.hostId &&
@@ -82,8 +86,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         )}
         {game.trotskyHidingSpot !== null && (
           <p className="trotsky-banner">
-            Trotsky is hiding near {getTile(game.trotskyHidingSpot).name} - land there and claim it
-            to find out who they are! (Whoever claims it Disappears either way.)
+            Stalin has marked {getTile(game.trotskyHidingSpot).name} - land there to accuse someone
+            of being Trotsky. Guess right and they're exposed and Disappear; guess wrong and you go
+            to jail instead.
           </p>
         )}
       </section>
@@ -183,14 +188,26 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         />
       )}
 
-      {canClaimTrotskyHidingSpot && (
+      {canAccuseOfTrotsky && (
         <div className="purchase-prompt card-prompt">
-          <p>Claim to have found Trotsky's hiding place?</p>
-          <button onClick={() => claimTrotskyHidingSpotAndSync(roomCode, game)}>
-            Claim It
+          <p>Accuse someone of being Trotsky:</p>
+          <select value={effectiveAccusedId} onChange={(event) => setAccusedId(event.target.value)}>
+            {accusableOthers.map((id) => (
+              <option key={id} value={id}>
+                {room.players[id]?.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => accuseOfTrotskyAndSync(roomCode, game, effectiveAccusedId)}
+            disabled={!effectiveAccusedId}
+          >
+            Accuse
           </button>
         </div>
       )}
+
+      <ShowTrialVoteBanner room={room} roomCode={roomCode} playerId={playerId} game={game} />
 
       <ul className="event-log">
         {game.log

@@ -132,7 +132,13 @@ export const COMMUNIST_TEST_CARDS: CardDefinition[] = [
     id: 'fourthInternational',
     deck: 'communistTest',
     title: 'Fourth International',
-    text: "All players take a card but do not look at it. One of them is now secretly Trotsky. Stalin will determine a location on the board. If a player lands on it and claims to have found Trotsky's hiding place, turn over the cards. If they are not Trotsky, they Disappear. If they are Trotsky, they Disappear.",
+    // House-ruled per the user's request, replacing the source text's
+    // literal "the claimant Disappears either way" (which read as
+    // self-defeating/likely a typo): the hiding spot is public, and
+    // landing on it lets you accuse a specific player. Guess right and
+    // the accused is exposed and Disappears; guess wrong and you're
+    // sent to jail instead.
+    text: "One player is secretly Trotsky. Stalin has marked a public location on the board. Land on it to accuse another player of being Trotsky: guess right and the accused is exposed and Disappears; guess wrong and you're sent to jail instead.",
   },
   {
     id: 'culturalRevolution',
