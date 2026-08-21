@@ -1,0 +1,38 @@
+.piece-info-panel {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: min(220px, 40vw);
+  border: 2px solid var(--color-black);
+  background: var(--color-paper);
+  padding: 0.6em;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-align: left;
+  z-index: 2;
+}
+
+.piece-info-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-red);
+  font-size: 0.95rem;
+}
+
+.piece-info-title {
+  color: var(--color-grey);
+  margin-bottom: 0.4em;
+}
+
+.piece-info-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  margin-top: 0.4em;
+}
+
+.piece-info-text {
+  color: var(--color-black);
+}

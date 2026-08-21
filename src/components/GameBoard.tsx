@@ -18,6 +18,7 @@ import CardTargetPrompt from './CardTargetPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
+import PieceInfoPanel from './PieceInfoPanel';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import './GameBoard.css';
 
@@ -73,6 +74,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
   return (
     <main className="game-board">
+      {me && <PieceInfoPanel pieceId={me.pieceId} />}
+
       <section className="game-status">
         <p className="turn-indicator">
           {isMyTurn
