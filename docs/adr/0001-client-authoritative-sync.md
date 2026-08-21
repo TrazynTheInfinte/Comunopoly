@@ -1,0 +1,5 @@
+# Client-authoritative sync, no server-side move validation
+
+Comunopoly is a full rules-enforcing engine synced across remote devices via Firebase, but on a $0 budget with no billing account we're willing to set up. Firebase's free Spark plan covers the realtime database at no cost, but server-side validation (Cloud Functions) requires upgrading to the paid Blaze plan, which needs a linked credit card even if actual usage stays free.
+
+We chose to trust the client: whoever's turn it is computes the result and writes it directly to the shared database, with no server checking that the move was legal. This is acceptable because the game is played among a closed group of friends with no incentive to cheat — but it means anyone with basic browser dev tools could falsify game state. If Comunopoly ever needs to support less-trusted players (public rooms, strangers, competitive stakes), this decision should be revisited and server-side validation added, which would mean upgrading to Blaze and writing Cloud Functions to authoritatively apply moves.
