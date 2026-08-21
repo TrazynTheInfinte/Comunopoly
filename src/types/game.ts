@@ -107,17 +107,24 @@ export interface GamePlayerState {
   nkvdVisits: number;
   /** Set by NKVD HQ's first-visit penalty; consumed (and cleared) the next time the turn would reach this player. */
   skipNextTurn: boolean;
+  /** Extra turns still owed to this player before the turn actually passes to the next player (e.g. from Party Vanguard). */
+  extraTurns: number;
+  /** True if this player currently moves backward around the board (Counter-Revolutionary!, Cultural Revolution). */
+  movingBackward: boolean;
+  /** Set by Blacklist - can't buy properties or collect rent until clearing, which happens the next time this player passes or lands on STOY. */
+  blacklisted: boolean;
 }
 
 /**
  * A decision the current player must make before their turn can end:
- * either buy the property they just landed on, or (landing on an unowned
- * Volga) give away everything they own to claim it. More variants (e.g.
- * resolving a drawn card) join this union in later increments.
+ * buy the property they just landed on, give away everything to claim
+ * an unowned Volga, or acknowledge a drawn Communist Test/No Chance
+ * card before play continues.
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
-  | { type: 'volgaOffer'; tileId: number };
+  | { type: 'volgaOffer'; tileId: number }
+  | { type: 'cardDrawn'; cardId: string };
 
 export interface GameState {
   /** Player IDs in turn order. */
@@ -135,6 +142,13 @@ export interface GameState {
   chernobylCountdown: number | null;
   /** Tile IDs destroyed by a Chernobyl explosion - permanently unownable for the rest of the game. */
   destroyedTileIds: number[];
+  /** Card IDs remaining to be drawn, and already-drawn IDs to reshuffle in once a pile runs out. */
+  communistTestDrawPile: string[];
+  communistTestDiscardPile: string[];
+  noChanceDrawPile: string[];
+  noChanceDiscardPile: string[];
+  /** Dev-panel override: if set, the next card-tile landing draws this specific card instead of the pile's next one, without disturbing either pile. */
+  forcedCardId: string | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }

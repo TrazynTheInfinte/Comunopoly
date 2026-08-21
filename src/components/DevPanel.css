@@ -33,3 +33,11 @@
   padding: 0.25em;
   background: var(--color-paper);
 }
+
+.dev-panel-row select {
+  flex: 1;
+  font-family: var(--font-mono);
+  border: 2px solid var(--color-black);
+  padding: 0.25em;
+  background: var(--color-paper);
+}

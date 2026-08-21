@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
+import { findCard } from '../data/cards';
 import {
   acceptVolgaOfferAndSync,
+  acknowledgeCardAndSync,
   buyPropertyAndSync,
   declineVolgaOfferAndSync,
   endTurnAndSync,
@@ -38,9 +40,12 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
   const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];
   const isMyTurn = currentTurnPlayerId === playerId;
-  const pendingTile = game.pendingDecision
-    ? getTile(game.pendingDecision.tileId)
-    : null;
+  const pendingTile =
+    game.pendingDecision?.type === 'purchase' || game.pendingDecision?.type === 'volgaOffer'
+      ? getTile(game.pendingDecision.tileId)
+      : null;
+  const pendingCard =
+    game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
 
   const isDevPanelUnlocked =
     playerId === room.hostId &&
@@ -134,6 +139,16 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           </button>
           <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>
             Decline
+          </button>
+        </div>
+      )}
+
+      {isMyTurn && pendingCard && (
+        <div className="purchase-prompt card-prompt">
+          <p className="card-title">{pendingCard.title}</p>
+          <p>{pendingCard.text}</p>
+          <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>
+            Continue
           </button>
         </div>
       )}

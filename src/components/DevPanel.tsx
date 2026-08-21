@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { devSetForcedRollAndSync, devSetRoublesAndSync } from '../lib/gameSync';
+import { ALL_CARDS, findCard } from '../data/cards';
+import {
+  devSetForcedCardAndSync,
+  devSetForcedRollAndSync,
+  devSetRoublesAndSync,
+} from '../lib/gameSync';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
 import './DevPanel.css';
@@ -80,6 +85,28 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           <p className="hint">
             Next roll forced to {game.forcedRoll[0]} + {game.forcedRoll[1]}
           </p>
+        )}
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Force next card draw</p>
+        <div className="dev-panel-row">
+          <select
+            value={game.forcedCardId ?? ''}
+            onChange={(event) =>
+              devSetForcedCardAndSync(roomCode, game, event.target.value || null)
+            }
+          >
+            <option value="">(none - draw normally)</option>
+            {ALL_CARDS.map((card) => (
+              <option key={card.id} value={card.id}>
+                [{card.deck === 'communistTest' ? 'CT' : 'NC'}] {card.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        {game.forcedCardId && (
+          <p className="hint">Next card draw forced to "{findCard(game.forcedCardId).title}"</p>
         )}
       </div>
     </section>

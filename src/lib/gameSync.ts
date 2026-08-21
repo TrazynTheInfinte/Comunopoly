@@ -3,9 +3,11 @@ import { db } from './firebase';
 import type { GameState, PieceId } from '../types/game';
 import {
   acceptVolgaOffer,
+  acknowledgeCard,
   buyProperty,
   createInitialGameState,
   declineVolgaOffer,
+  devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
   endTurn,
@@ -54,6 +56,10 @@ export async function declineVolgaOfferAndSync(roomCode: string, game: GameState
   await writeGameState(roomCode, declineVolgaOffer(game));
 }
 
+export async function acknowledgeCardAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, acknowledgeCard(game));
+}
+
 export async function devSetRoublesAndSync(
   roomCode: string,
   game: GameState,
@@ -69,4 +75,12 @@ export async function devSetForcedRollAndSync(
   roll: [number, number] | null,
 ) {
   await writeGameState(roomCode, devSetForcedRoll(game, roll));
+}
+
+export async function devSetForcedCardAndSync(
+  roomCode: string,
+  game: GameState,
+  cardId: string | null,
+) {
+  await writeGameState(roomCode, devSetForcedCard(game, cardId));
 }

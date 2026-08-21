@@ -1,5 +1,10 @@
 import { BOARD_SIZE, getTile } from '../data/board';
-import type { GameState, GamePlayerState, PieceId } from '../types/game';
+import {
+  COMMUNIST_TEST_CARDS,
+  NO_CHANCE_CARDS,
+  findCard,
+} from '../data/cards';
+import type { CardDeck, GameState, GamePlayerState, PieceId } from '../types/game';
 
 const STARTING_ROUBLES = 1000;
 const STOY_LANDING_BONUS = 200;
@@ -22,9 +27,10 @@ const NKVD_TILE_ID = 39;
 const KREMLIN_BONUS = 200;
 const CHERNOBYL_COUNTDOWN_TURNS = 3;
 
-/** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned. */
+/** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned, and both card decks get shuffled. */
 export function createInitialGameState(
   playerAssignments: { playerId: string; pieceId: PieceId }[],
+  rng: () => number = Math.random,
 ): GameState {
   const players: Record<string, GamePlayerState> = {};
   for (const { playerId, pieceId } of playerAssignments) {
@@ -37,6 +43,9 @@ export function createInitialGameState(
       kremlinVisits: 0,
       nkvdVisits: 0,
       skipNextTurn: false,
+      extraTurns: 0,
+      movingBackward: false,
+      blacklisted: false,
     };
   }
 
@@ -51,6 +60,11 @@ export function createInitialGameState(
     forcedRoll: null,
     chernobylCountdown: null,
     destroyedTileIds: [],
+    communistTestDrawPile: shuffle(COMMUNIST_TEST_CARDS.map((c) => c.id), rng),
+    communistTestDiscardPile: [],
+    noChanceDrawPile: shuffle(NO_CHANCE_CARDS.map((c) => c.id), rng),
+    noChanceDiscardPile: [],
+    forcedCardId: null,
     log: ['The game begins.'],
   };
 }
@@ -58,6 +72,15 @@ export function createInitialGameState(
 function rollTwoDice(rng: () => number): [number, number] {
   const rollOne = () => Math.floor(rng() * 6) + 1;
   return [rollOne(), rollOne()];
+}
+
+function shuffle<T>(items: T[], rng: () => number): T[] {
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 function currentPlayerId(state: GameState): string {
@@ -311,10 +334,150 @@ function resolveNkvdLanding(state: GameState, playerId: string): GameState {
   return disappearStub(next, playerId, 'disappeared at NKVD HQ after repeated visits');
 }
 
+/**
+ * Draws the top card from a deck, moving it into that deck's discard
+ * pile. Reshuffles the discard pile back into the draw pile first if the
+ * draw pile has run dry.
+ */
+function drawCard(
+  state: GameState,
+  deck: CardDeck,
+  rng: () => number,
+): { state: GameState; cardId: string } {
+  const drawKey = deck === 'communistTest' ? 'communistTestDrawPile' : 'noChanceDrawPile';
+  const discardKey =
+    deck === 'communistTest' ? 'communistTestDiscardPile' : 'noChanceDiscardPile';
+
+  let drawPile = state[drawKey];
+  let discardPile = state[discardKey];
+  if (drawPile.length === 0) {
+    drawPile = shuffle(discardPile, rng);
+    discardPile = [];
+  }
+
+  const [cardId, ...remaining] = drawPile;
+  return {
+    state: { ...state, [drawKey]: remaining, [discardKey]: [...discardPile, cardId] },
+    cardId,
+  };
+}
+
+function setExtraTurns(state: GameState, playerId: string, delta: number): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...player, extraTurns: player.extraTurns + delta },
+    },
+  };
+}
+
+function toggleDirection(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...player, movingBackward: !player.movingBackward },
+    },
+  };
+}
+
+function toggleDirectionForAll(state: GameState): GameState {
+  const players = { ...state.players };
+  for (const id of Object.keys(players)) {
+    players[id] = { ...players[id], movingBackward: !players[id].movingBackward };
+  }
+  return { ...state, players };
+}
+
+function setBlacklisted(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, blacklisted: true } },
+  };
+}
+
+/** Nomenklatura: force-advance to The Kremlin, always moving forward regardless of the player's current direction, waiving the STOY pass fee along the way. */
+function nomenklaturaEffect(
+  state: GameState,
+  playerId: string,
+  rng: () => number,
+): GameState {
+  const player = state.players[playerId];
+  const forwardSteps = (KREMLIN_TILE_ID - player.position + BOARD_SIZE) % BOARD_SIZE;
+  if (forwardSteps === 0) return state; // already there
+
+  const forcedForward: GameState = {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, movingBackward: false } },
+  };
+  return moveAndResolve(forcedForward, playerId, forwardSteps, rng, {
+    waiveStoyFee: true,
+  });
+}
+
+// Effects for the cards that can be automated cleanly. Any card ID not
+// listed here (negotiation, secret roles, voting, a trivia quiz with no
+// question bank, rock-paper-scissors, etc.) has no automatic effect -
+// its full text still gets shown to the table, and players resolve it
+// themselves, same as a physical card.
+const CARD_EFFECTS: Record<
+  string,
+  (state: GameState, playerId: string, rng: () => number) => GameState
+> = {
+  bankError: (state, playerId) => giveRoubles(state, playerId, 1000),
+  accident: (state, playerId) => disappearStub(state, playerId, 'an "accident"'),
+  antiRevisionist: (state, playerId) => ({
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...state.players[playerId], skipNextTurn: true },
+    },
+  }),
+  partyVanguard: (state, playerId) => setExtraTurns(state, playerId, 2),
+  counterRevolutionary: (state, playerId) => toggleDirection(state, playerId),
+  culturalRevolution: (state) => toggleDirectionForAll(state),
+  blacklist: (state, playerId) => setBlacklisted(state, playerId),
+  nomenklatura: (state, playerId, rng) => nomenklaturaEffect(state, playerId, rng),
+};
+
+/** Draws a card (or uses a dev-panel forced one) and shows it to the table - see CARD_EFFECTS for which ones apply automatically. */
+function resolveCardLanding(
+  state: GameState,
+  playerId: string,
+  deck: CardDeck,
+  rng: () => number,
+): GameState {
+  let next: GameState;
+  let cardId: string;
+
+  if (state.forcedCardId) {
+    cardId = state.forcedCardId;
+    next = { ...state, forcedCardId: null };
+  } else {
+    const drawn = drawCard(state, deck, rng);
+    next = drawn.state;
+    cardId = drawn.cardId;
+  }
+
+  const card = findCard(cardId);
+  const effect = CARD_EFFECTS[cardId];
+  if (effect) {
+    next = effect(next, playerId, rng);
+  }
+
+  next = logEvent(next, `Drew "${card.title}": ${card.text}`);
+  return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+}
+
 function resolveLanding(
   state: GameState,
   playerId: string,
   position: number,
+  rng: () => number,
 ): GameState {
   const tile = getTile(position);
 
@@ -330,6 +493,9 @@ function resolveLanding(
 
       const ownerId = findOwner(state, tile.id);
       if (!ownerId) {
+        if (state.players[playerId].blacklisted) {
+          return logEvent(state, `Blacklisted - can't buy ${tile.name}.`);
+        }
         return {
           ...state,
           pendingDecision: { type: 'purchase', tileId: tile.id },
@@ -345,12 +511,14 @@ function resolveLanding(
           : Math.round(tile.price * PROPERTY_RENT_RATE);
 
       const next = payRoubles(state, playerId, rent);
-      if (state.players[ownerId].inJail) {
+      const owner = state.players[ownerId];
+      if (owner.inJail || owner.blacklisted) {
         // "When in jail, any rent you collect is seized by the state" -
-        // the payer still pays, but the jailed owner never sees it.
+        // Blacklist's "cannot... collect rent" gets the same treatment:
+        // the payer still pays, but the owner never sees it.
         return logEvent(
           next,
-          `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is in jail).`,
+          `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is ${owner.inJail ? 'in jail' : 'blacklisted'}).`,
         );
       }
       return logEvent(
@@ -368,28 +536,38 @@ function resolveLanding(
       if (tile.id === KREMLIN_TILE_ID) return resolveKremlinLanding(state, playerId);
       if (tile.id === NKVD_TILE_ID) return resolveNkvdLanding(state, playerId);
       return state;
+    case 'card':
+      return resolveCardLanding(state, playerId, tile.deck, rng);
     // Jail (just visiting) and Free Parking have no effect yet -
-    // Smuggling isn't implemented in this increment. Card tiles are
-    // deferred entirely for now: the piece lands there and nothing else
-    // happens yet.
+    // Smuggling isn't implemented in this increment.
     default:
       return state;
   }
 }
 
-/** Moves a player by `steps`, resolving STOY and whatever they land on. Shared by a normal roll and a jail-escape roll, since both work the same way once you know where movement starts from. */
+/**
+ * Moves a player by `steps`, resolving STOY and whatever they land on.
+ * Shared by a normal roll, a jail-escape roll, and a forced "advance to"
+ * card effect (Nomenklatura), since all three work the same way once you
+ * know where movement starts from and which direction it runs.
+ */
 function moveAndResolve(
   state: GameState,
   playerId: string,
   steps: number,
+  rng: () => number,
+  options: { waiveStoyFee?: boolean } = {},
 ): GameState {
   const player = state.players[playerId];
-  const rawNewPosition = player.position + steps;
-  const newPosition = rawNewPosition % BOARD_SIZE;
+  const rawNewPosition = player.movingBackward
+    ? player.position - steps
+    : player.position + steps;
+  const newPosition = ((rawNewPosition % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
   // Landing exactly on STOY pays out; merely passing through it (wrapping
-  // around to somewhere else) costs a fee instead - the reverse of
+  // past it in either direction) costs a fee instead - the reverse of
   // regular Monopoly's "Go," per the source rules.
-  const passedStoy = rawNewPosition >= BOARD_SIZE && newPosition !== 0;
+  const wrapped = rawNewPosition >= BOARD_SIZE || rawNewPosition < 0;
+  const passedStoy = wrapped && newPosition !== 0;
   const landedOnStoy = newPosition === 0;
 
   let next: GameState = {
@@ -402,7 +580,7 @@ function moveAndResolve(
 
   next = logEvent(next, `Moved to ${getTile(newPosition).name}.`);
 
-  if (passedStoy) {
+  if (passedStoy && !options.waiveStoyFee) {
     next = payRoubles(next, playerId, STOY_PASS_FEE);
     next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
   }
@@ -414,7 +592,20 @@ function moveAndResolve(
     );
   }
 
-  return resolveLanding(next, playerId, newPosition);
+  // Blacklist clears once you've made it back around to (or through)
+  // STOY - an approximation of "a full circle from your current
+  // location," which would otherwise need tracking an arbitrary
+  // per-player start tile rather than reusing the STOY-crossing check
+  // every move already computes.
+  if ((passedStoy || landedOnStoy) && next.players[playerId].blacklisted) {
+    next = {
+      ...next,
+      players: { ...next.players, [playerId]: { ...next.players[playerId], blacklisted: false } },
+    };
+    next = logEvent(next, 'No longer blacklisted - you can buy and collect rent again.');
+  }
+
+  return resolveLanding(next, playerId, newPosition, rng);
 }
 
 /**
@@ -429,6 +620,7 @@ function resolveJailRoll(
   die2: number,
   isDoubles: boolean,
   steps: number,
+  rng: () => number,
 ): GameState {
   // Being in jail suspends the doubles-roll-again and 3-doubles-to-jail
   // rules entirely - "except while in jail," per the source rules.
@@ -446,6 +638,7 @@ function resolveJailRoll(
       logEvent(escaped, 'Rolled doubles and escaped jail!'),
       playerId,
       steps,
+      rng,
     );
   }
 
@@ -482,7 +675,7 @@ export function rollDice(
   );
 
   if (player.inJail) {
-    return resolveJailRoll(next, playerId, die1, die2, isDoubles, steps);
+    return resolveJailRoll(next, playerId, die1, die2, isDoubles, steps, rng);
   }
 
   const doublesCount = isDoubles ? state.doublesCount + 1 : 0;
@@ -496,7 +689,7 @@ export function rollDice(
   }
 
   next = { ...next, doublesCount, lastRollWasDoubles: isDoubles };
-  return moveAndResolve(next, playerId, steps);
+  return moveAndResolve(next, playerId, steps, rng);
 }
 
 /** The current player buys the property/railroad they just landed on. */
@@ -588,6 +781,21 @@ export function endTurn(state: GameState): GameState {
     : state;
 
   next = tickChernobyl(next, endingPlayerId);
+
+  // Party Vanguard grants extra turns "in quick succession" - work
+  // through those before the turn actually passes to anyone else.
+  const endingPlayer = next.players[endingPlayerId];
+  if (endingPlayer.extraTurns > 0) {
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [endingPlayerId]: { ...endingPlayer, extraTurns: endingPlayer.extraTurns - 1 },
+      },
+    };
+    return { ...next, lastRoll: null, lastRollWasDoubles: false, doublesCount: 0 };
+  }
+
   next = advanceTurn(next);
 
   return {
@@ -596,6 +804,12 @@ export function endTurn(state: GameState): GameState {
     lastRollWasDoubles: false,
     doublesCount: 0,
   };
+}
+
+/** Acknowledges a drawn card, letting the turn continue. Any automatic effect already applied at draw time - this just dismisses the card banner. */
+export function acknowledgeCard(state: GameState): GameState {
+  if (state.pendingDecision?.type !== 'cardDrawn') return state;
+  return { ...state, pendingDecision: null };
 }
 
 function chargeJailBribe(state: GameState, playerId: string): GameState {
@@ -711,4 +925,11 @@ export function devSetForcedRoll(
   roll: [number, number] | null,
 ): GameState {
   return { ...state, forcedRoll: roll };
+}
+
+export function devSetForcedCard(
+  state: GameState,
+  cardId: string | null,
+): GameState {
+  return { ...state, forcedCardId: cardId };
 }

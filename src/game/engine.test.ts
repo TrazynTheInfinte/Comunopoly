@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   acceptVolgaOffer,
+  acknowledgeCard,
   buyProperty,
   createInitialGameState,
   declineVolgaOffer,
+  devSetForcedCard,
   devSetForcedRoll,
   endTurn,
   rollDice,
   skipPurchase,
 } from './engine';
+import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import type { GameState } from '../types/game';
 
 const PLAYERS = [
@@ -576,5 +579,215 @@ describe('The Volga', () => {
 
     expect(state.players.p2.ownedTileIds).toEqual([28]);
     expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+});
+
+describe('Communist Test / No Chance cards', () => {
+  it('shuffles both full decks into the draw piles at game start', () => {
+    const state = createInitialGameState(PLAYERS);
+    expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length);
+    expect(state.noChanceDrawPile).toHaveLength(NO_CHANCE_CARDS.length);
+    expect(state.communistTestDiscardPile).toEqual([]);
+    expect(state.noChanceDiscardPile).toEqual([]);
+  });
+
+  it('draws the top card into the discard pile on a normal (non-forced) draw', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
+    state = rollDice(state);
+
+    expect(state.noChanceDrawPile).toHaveLength(NO_CHANCE_CARDS.length - 1);
+    expect(state.noChanceDiscardPile).toHaveLength(1);
+    expect(state.pendingDecision?.type).toBe('cardDrawn');
+  });
+
+  it('a forced card draw bypasses the pile entirely', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    expect(state.forcedCardId).toBeNull();
+    expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length); // untouched
+  });
+
+  it('acknowledgeCard dismisses the drawn-card prompt so the turn can end', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(endTurn(state)).toBe(state); // blocked while a card is pending
+
+    state = acknowledgeCard(state);
+    expect(state.pendingDecision).toBeNull();
+  });
+
+  it('a card with no automated effect just gets shown, with no other state change', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'siegeOfStalingrad');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({
+      type: 'cardDrawn',
+      cardId: 'siegeOfStalingrad',
+    });
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
+  it('"Bank Error in Your Favour" collects 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(2000);
+  });
+
+  it('"Accident" disappears (placeholder) the drawing player', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 700, ownedTileIds: [6] } },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'accident');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
+  it('"Anti-Revisionist" makes the player miss their next turn', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'antiRevisionist');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.skipNextTurn).toBe(true);
+  });
+
+  it('"Party Vanguard" grants two extra turns before play passes on', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'partyVanguard');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+    state = acknowledgeCard(state);
+
+    expect(state.players.p1.extraTurns).toBe(2);
+
+    state = endTurn(state);
+    expect(state.currentTurnIndex).toBe(0); // still p1 - 1st extra turn
+    expect(state.players.p1.extraTurns).toBe(1);
+
+    state = endTurn(state);
+    expect(state.currentTurnIndex).toBe(0); // still p1 - 2nd extra turn
+    expect(state.players.p1.extraTurns).toBe(0);
+
+    state = endTurn(state);
+    expect(state.currentTurnIndex).toBe(1); // extra turns used up, passes to p2
+  });
+
+  it('"Counter-Revolutionary!" reverses only the drawing player\'s direction', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'counterRevolutionary');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.movingBackward).toBe(true);
+    expect(state.players.p2.movingBackward).toBe(false);
+  });
+
+  it('"Cultural Revolution" reverses every player\'s direction', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'culturalRevolution');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.movingBackward).toBe(true);
+    expect(state.players.p2.movingBackward).toBe(true);
+  });
+
+  it('a player moving backward wraps correctly and still pays the STOY pass fee', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, movingBackward: true } },
+    };
+    state = withPosition(state, 'p1', 2);
+    state = devSetForcedRoll(state, [2, 3]); // 2 - 5 -> wraps backward past STOY to 37
+    state = rollDice(state);
+
+    expect(state.players.p1.position).toBe(37);
+    expect(state.players.p1.roubles).toBe(1000 - 50 + 200); // STOY pass fee, then Kremlin's first-visit bonus
+  });
+
+  it('"Blacklist" blocks buying and rent collection until passing STOY again', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'blacklist');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+    state = acknowledgeCard(state);
+    expect(state.players.p1.blacklisted).toBe(true);
+
+    // Can't buy while blacklisted (still p1's turn - rollDice always acts
+    // on whoever currentPlayerId currently is, and we haven't ended the
+    // turn, so this is legitimately still p1 rolling again).
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [2, 4]); // -> tile 6, Moscow Metro, unowned
+    state = rollDice(state);
+    expect(state.pendingDecision).toBeNull();
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+
+    // Passing STOY clears the blacklist.
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps to tile 1
+    state = rollDice(state);
+    expect(state.players.p1.blacklisted).toBe(false);
+  });
+
+  it("Blacklist seizes rent for the State instead of paying the blacklisted owner", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6], blacklisted: true },
+      },
+    };
+    state = endTurn(state); // p2's turn
+    state = devSetForcedRoll(state, [2, 4]); // p2: 0 + 6 -> tile 6, owned by blacklisted p1
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000 - 20); // still pays
+    expect(state.players.p1.roubles).toBe(1000); // but blacklisted owner never receives it
+  });
+
+  it('"Nomenklatura" force-advances to The Kremlin and waives the STOY pass fee', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedCard(state, 'nomenklatura');
+    state = devSetForcedRoll(state, [3, 5]); // 30 + 8 -> tile 38, Communist Test
+    state = rollDice(state);
+
+    expect(state.players.p1.position).toBe(37); // The Kremlin
+    // No STOY pass fee despite wrapping through it, plus the Kremlin's
+    // own first-visit bonus for landing there.
+    expect(state.players.p1.roubles).toBe(1000 + 200);
+    expect(state.players.p1.kremlinVisits).toBe(1);
   });
 });
