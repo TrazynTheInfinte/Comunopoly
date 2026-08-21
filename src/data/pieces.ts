@@ -1,10 +1,11 @@
 import type { PieceDefinition } from '../types/game';
 
-// The first 6 of an eventual 15 Pieces - picked in the domain-modeling
-// session for having the simplest, most self-contained Special Powers,
-// so we can get the respawn/Piece Pool mechanic and the core loop working
-// before tackling gnarlier interactions (forced trades, secret roles,
-// etc.) on the rest of the roster.
+// All 12 Pieces from the source rules table (rulesPrintable.pdf) - not
+// 15 as an earlier note here claimed; that was a miscount corrected once
+// the full roster was actually implemented. The first 6 (Boot through
+// Dog) were picked first for having the simplest, most self-contained
+// Special Powers, to get the respawn/Piece Pool mechanic and the core
+// loop working before tackling the gnarlier interactions below.
 export const STARTING_PIECES: PieceDefinition[] = [
   {
     id: 'boot',
@@ -53,5 +54,72 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Can choose a card when landing on No Chance.',
     winConditionDescription:
       "You're denounced. Final score is half of your money in the West.",
+  },
+  {
+    id: 'wheelBarrel',
+    name: 'Wheel Barrel',
+    title: 'Kulak (Traditional Farmer)',
+    powerDescription:
+      'Automatically takes any purple-group property you land on - free if unowned, seized (no rent) if someone else owns it.',
+    winConditionDescription:
+      "You've been sent to a gulag. Final score is money in the West times number of properties.",
+  },
+  {
+    id: 'hat',
+    name: 'Hat',
+    title: 'Nepman',
+    // TODO(houses): "When you complete a collection, get a free house" -
+    // there's no house/hotel system yet (rent is still a flat
+    // placeholder rate). Wire this up once houses exist: on completing a
+    // full color-group collection, grant Hat one free house on it.
+    powerDescription:
+      'When you complete a collection, get a free house. [Not yet implemented - no house system exists yet.]',
+    winConditionDescription: "You're shot. You score nothing. That's your score.",
+  },
+  {
+    id: 'penguin',
+    name: 'Penguin',
+    title: 'Spy',
+    // TODO(smuggling): "smuggle money to the West when landing on any
+    // owned property" extends the base Smuggling/"the West" mechanic
+    // from CONTEXT.md, which was deferred at the very start of the
+    // project and still doesn't exist. Build base Smuggling first, then
+    // extend it here: Penguin should be able to smuggle on ANY owned
+    // property (not just their own + Free Parking).
+    powerDescription:
+      'Can smuggle money to the West when landing on any owned property. [Not yet implemented - the base Smuggling mechanic does not exist yet.]',
+    winConditionDescription:
+      "You've been double-crossed. Before any scores are calculated, choose another player. You get their Score, and they get 0.",
+  },
+  {
+    id: 'cat',
+    name: 'Cat',
+    title: 'Spetsnaz GRU',
+    powerDescription:
+      'After reading a drawn Communist Test/No Chance card, choose to keep it or hand its entire effect to another player instead.',
+    winConditionDescription:
+      "You've been captured. Your Score is calculated last. Your Score is 0, but then everyone moves their Score around clockwise by one place.",
+  },
+  {
+    id: 'rubberDuck',
+    name: 'Rubber Duck',
+    title: "Stalin's Body-Double",
+    powerDescription:
+      'Any time your own move lands you on the same square as another player, you can choose to send them to jail.',
+    winConditionDescription:
+      "You've been forgotten. Final score is how many people you sent to jail times your number of properties.",
+  },
+  {
+    id: 'trex',
+    name: 'T-Rex',
+    title: 'Unreformed Old Bolshevik',
+    // The source text's second clause ("any money you make is divided
+    // equally among yourself and all players, with excess going to the
+    // state") is intentionally omitted from both this description and
+    // the implementation, per explicit request - it isn't built.
+    powerDescription:
+      "Can't buy properties. Landing on one owned by someone else seizes it automatically (no rent paid). Chernobyl Power and The Volga still follow their own normal rules.",
+    winConditionDescription:
+      "You've become irrelevant to the ongoing liberation of the Global Proletariat. Your Score is calculated first: divide the money in your hand among the other players evenly (any remainder is deducted from your Score), then count your seized properties. Final score is the number of people you shared money with times that count.",
   },
 ];

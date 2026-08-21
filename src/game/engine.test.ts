@@ -16,6 +16,8 @@ import {
   devSetForcedRoll,
   endTurn,
   resolveCardTarget,
+  resolveCatRedirect,
+  resolveRubberDuckEncounter,
   rollDice,
   skipPurchase,
   useDenounceCollaborators,
@@ -629,7 +631,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
 
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
     expect(state.forcedCardId).toBeNull();
     expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length); // untouched
   });
@@ -657,6 +659,7 @@ describe('Communist Test / No Chance cards', () => {
     expect(state.pendingDecision).toEqual({
       type: 'cardDrawn',
       cardId: 'politicalCorrectness',
+      forPlayerId: 'p1',
     });
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -852,7 +855,7 @@ describe('newly automated cards', () => {
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state, () => 0); // picks question index 0
 
-      expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0 });
+      expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0, forPlayerId: 'p1' });
       expect(state.players.p1.inJail).toBe(false);
     });
 
@@ -1021,14 +1024,14 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'siegeOfStalingrad');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
-    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'siegeOfStalingrad' });
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'siegeOfStalingrad', forPlayerId: 'p1' });
 
     state = resolveCardTarget(state, { targetTileId: 6 });
 
     expect(state.players.p1.ownedTileIds).toEqual([6]);
     expect(state.players.p2.ownedTileIds).toEqual([]);
     expect(state.lockedTileIds).toEqual([6]);
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'siegeOfStalingrad' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'siegeOfStalingrad', forPlayerId: 'p1' });
   });
 
   it('a locked (seized) property is exempt from being surrendered to The Volga', () => {
@@ -1057,7 +1060,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'doubleAgent');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
-    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent' });
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent', forPlayerId: 'p1' });
 
     state = resolveCardTarget(state, { targetPlayerId: 'p2' });
 
@@ -1078,7 +1081,7 @@ describe('newly automated cards', () => {
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'phoneCallFromStalin' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'phoneCallFromStalin', forPlayerId: 'p1' });
   });
 
   it('"Phone Call from Stalin" otherwise offers a free property that traps the piece if revisited', () => {
@@ -1088,7 +1091,7 @@ describe('newly automated cards', () => {
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state, () => 0.99); // internal die roll -> 6, not 1
 
-    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'phoneCallFromStalin' });
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'phoneCallFromStalin', forPlayerId: 'p1' });
 
     state = resolveCardTarget(state, { targetTileId: 9 }); // unowned property
     expect(state.players.p1.ownedTileIds).toEqual([9]);
@@ -1300,7 +1303,7 @@ describe('dev helpers', () => {
     state = devDrawCard(state, 'communistTest');
 
     expect(state.players.p1.roubles).toBe(2000);
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
     // Forced draws never touch the pile.
     expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length);
   });
@@ -1431,7 +1434,7 @@ describe('Piece Special Powers', () => {
     expect(state.players.p1.roubles).toBe(1000 - 50 + 1000);
     expect(state.communistTestDrawPile).not.toContain('bankError');
     expect(state.communistTestDiscardPile).toContain('bankError');
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
   });
 
   it("chooseCard does nothing if the chosen card isn't actually in the pile", () => {
@@ -1470,6 +1473,303 @@ describe('Piece Special Powers', () => {
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
 
-    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
+  });
+});
+
+describe("Wheel Barrel's power (auto-seize purple properties)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'wheelBarrel' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('takes an unowned purple property for free, with no purchase prompt', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 0]); // -> tile 1, purple, unowned
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([1]);
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.pendingDecision).toBeNull();
+  });
+
+  it("seizes an opponent's purple property for free, no rent paid", () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [1] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 0]); // -> tile 1
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([1]);
+    expect(state.players.p2.ownedTileIds).toEqual([]);
+    expect(state.players.p1.roubles).toBe(1000); // no rent paid
+    expect(state.players.p2.roubles).toBe(1000); // no rent received either
+  });
+
+  it('does not auto-take a non-purple property - normal purchase prompt applies', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6, Moscow Metro (lightBlue)
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.pendingDecision).toEqual({ type: 'purchase', tileId: 6 });
+  });
+
+  it('a locked purple property is exempt - falls through to normal rent instead', () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      lockedTileIds: [1],
+      players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [1] } },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 0]); // -> tile 1
+
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([1]); // not seized
+    expect(state.players.p1.roubles).toBeLessThan(1000); // paid rent instead
+  });
+});
+
+describe("T-Rex's power (can't buy, auto-seizes owned properties)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'trex' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('never gets a purchase prompt for an unowned property', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6, unowned
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.pendingDecision).toBeNull();
+    expect(state.log[state.log.length - 1]).toContain("T-Rex can't buy properties");
+  });
+
+  it("seizes an opponent's property automatically, paying no rent", () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+    expect(state.players.p2.ownedTileIds).toEqual([]);
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p2.roubles).toBe(1000);
+  });
+
+  it("seizes an opponent's railroad automatically too", () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [5] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [2, 3]); // -> tile 5, railroad
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([5]);
+    expect(state.players.p2.ownedTileIds).toEqual([]);
+  });
+
+  it('Chernobyl Power still follows its own normal forced-ownership rule, untouched by T-Rex', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [6, 6]); // -> tile 12, Chernobyl Power
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([12]);
+    expect(state.log[state.log.length - 1]).not.toContain('T-Rex');
+  });
+
+  it('a locked property is exempt - falls through to normal rent instead', () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      lockedTileIds: [6],
+      players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([6]); // not seized
+    expect(state.players.p1.roubles).toBeLessThan(1000); // paid rent instead
+  });
+});
+
+describe("Rubber duck's power (offer to jail whoever they land on)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'rubberDuck' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('sets an encounter when their own move lands them on another player', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p2', 6);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // p1 -> tile 6, same as p2
+
+    state = rollDice(state);
+
+    expect(state.rubberDuckEncounter).toEqual({ rubberDuckPlayerId: 'p1', targetPlayerId: 'p2' });
+  });
+
+  it('does NOT trigger when another player lands on Rubber duck instead', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' as const },
+      { playerId: 'p2', pieceId: 'rubberDuck' as const },
+    ]);
+    state = withPosition(state, 'p2', 6);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // p1 (not Rubber duck) -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.rubberDuckEncounter).toBeNull();
+  });
+
+  it('resolveRubberDuckEncounter(true) sends the target to jail', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p2', 6);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]);
+    state = rollDice(state);
+
+    state = resolveRubberDuckEncounter(state, true);
+
+    expect(state.players.p2.inJail).toBe(true);
+    expect(state.rubberDuckEncounter).toBeNull();
+  });
+
+  it('resolveRubberDuckEncounter(false) just dismisses it', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p2', 6);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]);
+    state = rollDice(state);
+
+    state = resolveRubberDuckEncounter(state, false);
+
+    expect(state.players.p2.inJail).toBe(false);
+    expect(state.rubberDuckEncounter).toBeNull();
+  });
+
+  it('lapses (implicitly "no") if Rubber duck ends their turn without acting on it', () => {
+    let state = createInitialGameState(players);
+    // Free Parking (tile 20) has no landing effect of its own, so nothing
+    // else (like an unowned property's purchase prompt) blocks endTurn.
+    state = withPosition(state, 'p2', 20);
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]); // non-doubles roll, 15 + 5 -> tile 20
+    state = rollDice(state);
+    expect(state.rubberDuckEncounter).not.toBeNull();
+
+    state = endTurn(state);
+
+    expect(state.rubberDuckEncounter).toBeNull();
+    expect(state.players.p2.inJail).toBe(false);
+  });
+});
+
+describe("Cat's power (keep or redirect a drawn card's effects)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'cat' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('opens a catRedirect decision after reading the card, instead of applying it immediately', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'catRedirect', cardId: 'bankError' });
+    expect(state.players.p1.roubles).toBe(1000); // not applied yet
+  });
+
+  it('keeping the card applies its full effect to Cat', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    state = resolveCatRedirect(state, null);
+
+    expect(state.players.p1.roubles).toBe(2000);
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
+  });
+
+  it('giving it away applies the full effect to the chosen player instead', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    state = resolveCatRedirect(state, 'p2');
+
+    expect(state.players.p1.roubles).toBe(1000); // Cat untouched
+    expect(state.players.p2.roubles).toBe(2000); // p2 got the money instead
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p2' });
+  });
+
+  it('redirecting a target-needing card hands the follow-up decision to the new player too', () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'doubleAgent');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+
+    state = resolveCatRedirect(state, 'p2');
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent', forPlayerId: 'p2' });
+
+    // p2 (not Cat/p1) now resolves it, swapping Pieces with p1 (the only other player).
+    state = resolveCardTarget(state, { targetPlayerId: 'p1' });
+    expect(state.players.p2.pieceId).toBe('cat');
+    expect(state.players.p1.pieceId).toBe('boot');
+  });
+
+  it('redirecting NKVD sends the wrong-answer penalty to the new player, not Cat', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'nkvd');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0);
+
+    state = resolveCatRedirect(state, 'p2', () => 0);
+    expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0, forPlayerId: 'p2' });
+
+    state = answerNkvdQuiz(state, 'wrong answer');
+
+    expect(state.players.p2.inJail).toBe(true);
+    expect(state.players.p1.inJail).toBe(false);
+  });
+
+  it('rejects an invalid target (self or a nonexistent player)', () => {
+    let state = createInitialGameState(players);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+    const before = state;
+
+    expect(resolveCatRedirect(state, 'p1')).toBe(before); // can't redirect to self
+    expect(resolveCatRedirect(state, 'not-a-real-player')).toBe(before);
   });
 });

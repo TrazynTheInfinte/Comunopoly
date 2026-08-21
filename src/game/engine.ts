@@ -77,6 +77,7 @@ export function createInitialGameState(
     phoneCallTraps: [],
     trotskyHidingSpot: null,
     activeVote: null,
+    rubberDuckEncounter: null,
     log: ['The game begins.'],
   };
 }
@@ -203,6 +204,24 @@ function disappearStub(
   if (next.activeVote && (next.activeVote.callerId === playerId || next.activeVote.targetPlayerId === playerId)) {
     // The caller or the person on trial Disappeared some other way mid-vote - abort it rather than leave a dangling reference.
     next = { ...next, activeVote: null };
+  }
+  if (
+    next.rubberDuckEncounter &&
+    (next.rubberDuckEncounter.rubberDuckPlayerId === playerId ||
+      next.rubberDuckEncounter.targetPlayerId === playerId)
+  ) {
+    next = { ...next, rubberDuckEncounter: null };
+  }
+  if (
+    next.pendingDecision &&
+    'forPlayerId' in next.pendingDecision &&
+    next.pendingDecision.forPlayerId === playerId
+  ) {
+    // Whoever the pending card decision was for Disappeared some other
+    // way (e.g. Cat redirected it to them, then they got caught hiding)
+    // before resolving it - clear it rather than leave the game stuck
+    // waiting on a player who no longer has anything to decide.
+    next = { ...next, pendingDecision: null };
   }
   return logEvent(
     next,
@@ -654,11 +673,11 @@ export function chooseCard(
 }
 
 /**
- * Applies whatever a drawn card ID does: resolves it immediately (see
- * CARD_EFFECTS) or, for cards needing a target, opens a cardTarget
- * decision first. Phone Call from Stalin and NKVD get their own inline
- * handling since a die roll (or a quiz) decides what happens next.
- * Shared by both a normal draw and Car/Dog's chosen one.
+ * Applies whatever a drawn card ID does. Just reads the card aloud (logs
+ * it) and, for Cat, opens a catRedirect decision so they can choose to
+ * keep it or hand the whole effect to someone else; every other Piece
+ * goes straight into applyCardEffectsFor for themselves. Shared by both
+ * a normal draw and Car/Dog's chosen one.
  */
 function applyDrawnCard(
   state: GameState,
@@ -667,32 +686,85 @@ function applyDrawnCard(
   rng: () => number,
 ): GameState {
   const card = findCard(cardId);
-  let next = logEvent(state, `Drew "${card.title}": ${card.text}`);
+  const next = logEvent(state, `Drew "${card.title}": ${card.text}`);
+
+  // Cat's power: after reading the card, choose to keep it or hand its
+  // entire effect (including any follow-up target-selection/quiz) to
+  // another player instead.
+  if (state.players[playerId].pieceId === 'cat') {
+    return { ...next, pendingDecision: { type: 'catRedirect', cardId } };
+  }
+
+  return applyCardEffectsFor(next, playerId, cardId, rng);
+}
+
+/**
+ * Actually applies a card's effect to whichever player it ends up
+ * affecting - normally the drawer, but Cat's power can redirect this to
+ * someone else. Resolves immediately (see CARD_EFFECTS) or, for cards
+ * needing a target, opens a cardTarget decision first. Phone Call from
+ * Stalin and NKVD get their own inline handling since a die roll (or a
+ * quiz) decides what happens next. Every pendingDecision this opens
+ * carries `forPlayerId: affectedPlayerId`, since that player - not
+ * necessarily the current turn player - is the one who resolves it.
+ */
+function applyCardEffectsFor(
+  state: GameState,
+  affectedPlayerId: string,
+  cardId: string,
+  rng: () => number,
+): GameState {
+  let next = state;
 
   if (cardId === 'phoneCallFromStalin') {
     const roll = rollOneDie(rng);
     if (roll === 1) {
-      next = disappearStub(next, playerId, `rolled a 1 on the Phone Call from Stalin`);
-      return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+      next = disappearStub(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`);
+      return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
     }
     next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
-    return { ...next, pendingDecision: { type: 'cardTarget', cardId } };
+    return { ...next, pendingDecision: { type: 'cardTarget', cardId, forPlayerId: affectedPlayerId } };
   }
 
   if (cardId === 'nkvd') {
     const questionIndex = Math.floor(rng() * NKVD_QUESTIONS.length);
-    return { ...next, pendingDecision: { type: 'nkvdQuiz', questionIndex } };
+    return { ...next, pendingDecision: { type: 'nkvdQuiz', questionIndex, forPlayerId: affectedPlayerId } };
   }
 
   if (CARDS_NEEDING_TARGET.has(cardId)) {
-    return { ...next, pendingDecision: { type: 'cardTarget', cardId } };
+    return { ...next, pendingDecision: { type: 'cardTarget', cardId, forPlayerId: affectedPlayerId } };
   }
 
   const effect = CARD_EFFECTS[cardId];
   if (effect) {
-    next = effect(next, playerId, rng);
+    next = effect(next, affectedPlayerId, rng);
   }
-  return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+  return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
+}
+
+/**
+ * Resolves Cat's catRedirect decision: `targetPlayerId` of null means
+ * "keep it" (effects apply to Cat); otherwise the whole effect - and any
+ * follow-up decision it opens - applies to that other player instead.
+ */
+export function resolveCatRedirect(
+  state: GameState,
+  targetPlayerId: string | null,
+  rng: () => number = Math.random,
+): GameState {
+  if (state.pendingDecision?.type !== 'catRedirect') return state;
+  const catId = currentPlayerId(state);
+  if (targetPlayerId !== null && (!state.players[targetPlayerId] || targetPlayerId === catId)) {
+    return state; // invalid target
+  }
+
+  const affectedPlayerId = targetPlayerId ?? catId;
+  const { cardId } = state.pendingDecision;
+  const next = logEvent(
+    state,
+    targetPlayerId === null ? 'Kept the card.' : "Handed the card's effects to another player.",
+  );
+  return applyCardEffectsFor(next, affectedPlayerId, cardId, rng);
 }
 
 /**
@@ -765,7 +837,51 @@ function resolveLanding(
         );
       }
 
+      const actingPieceId = state.players[playerId].pieceId;
       const ownerId = findOwner(state, tile.id);
+
+      // Wheel Barrel's power: automatically takes any purple-group
+      // property - free if unowned, seized with no rent if someone else
+      // owns it. Locked tiles (Siege of Stalingrad) stay immune, same as
+      // every other forced-transfer mechanic.
+      if (
+        actingPieceId === 'wheelBarrel' &&
+        tile.kind === 'property' &&
+        tile.colorGroup === 'purple' &&
+        isTradeable(state, tile.id)
+      ) {
+        if (!ownerId) {
+          return logEvent(
+            giveTileTo(state, tile.id, playerId),
+            `Automatically took ${tile.name} for free (Kulak's power).`,
+          );
+        }
+        if (ownerId !== playerId) {
+          return logEvent(
+            transferTileOwnership(state, tile.id, ownerId, playerId),
+            `Seized ${tile.name} for free - no rent paid (Kulak's power).`,
+          );
+        }
+        return state; // already theirs
+      }
+
+      // T-Rex's power: can never buy, but automatically seizes any
+      // property/railroad owned by someone else, paying no rent.
+      // Chernobyl Power/The Volga are utilities, handled by their own
+      // case below, so this never touches "energy and water."
+      if (actingPieceId === 'trex' && isTradeable(state, tile.id)) {
+        if (!ownerId) {
+          return logEvent(state, `${tile.name} is unowned, but T-Rex can't buy properties.`);
+        }
+        if (ownerId !== playerId) {
+          return logEvent(
+            transferTileOwnership(state, tile.id, ownerId, playerId),
+            `Seized ${tile.name} - no rent paid (T-Rex's power).`,
+          );
+        }
+        return state; // already theirs
+      }
+
       if (!ownerId) {
         if (state.players[playerId].blacklisted) {
           return logEvent(state, `Blacklisted - can't buy ${tile.name}.`);
@@ -885,6 +1001,23 @@ function moveAndResolve(
   for (const [otherId, otherPlayer] of Object.entries(next.players)) {
     if (otherId !== playerId && otherPlayer.hidingPosition === newPosition) {
       next = disappearStub(next, otherId, 'found while hiding');
+    }
+  }
+
+  // Rubber duck's power: their own move landing on an occupied square
+  // offers the option to jail whoever's there. This runs independently
+  // of pendingDecision (see rubberDuckEncounter's type comment) rather
+  // than competing with whatever else this landing might trigger (e.g.
+  // an unowned property's purchase prompt).
+  if (next.players[playerId].pieceId === 'rubberDuck') {
+    const coOccupant = Object.entries(next.players).find(
+      ([id, p]) => id !== playerId && p.position === newPosition,
+    );
+    if (coOccupant) {
+      next = {
+        ...next,
+        rubberDuckEncounter: { rubberDuckPlayerId: playerId, targetPlayerId: coOccupant[0] },
+      };
     }
   }
 
@@ -1070,8 +1203,7 @@ export function resolveCardTarget(
   selection: { targetPlayerId?: string; targetTileId?: number },
 ): GameState {
   if (state.pendingDecision?.type !== 'cardTarget') return state;
-  const playerId = currentPlayerId(state);
-  const { cardId } = state.pendingDecision;
+  const { cardId, forPlayerId: playerId } = state.pendingDecision;
   let next = state;
 
   if (cardId === 'siegeOfStalingrad' && selection.targetTileId !== undefined) {
@@ -1107,7 +1239,7 @@ export function resolveCardTarget(
     next = logEvent(next, `Claimed ${getTile(tileId).name} for free - but landing there again means Disappearing.`);
   }
 
-  return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+  return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: playerId } };
 }
 
 /** Uses a held Denounce Your Collaborators card: only while in jail, swaps places with the chosen player (who goes to jail instead). Consumes the card. */
@@ -1250,7 +1382,7 @@ function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
 /** Answers NKVD's doctrine question. A (loosely normalized) correct match just moves on; anything else sends the current player to jail. */
 export function answerNkvdQuiz(state: GameState, answerText: string): GameState {
   if (state.pendingDecision?.type !== 'nkvdQuiz') return state;
-  const playerId = currentPlayerId(state);
+  const playerId = state.pendingDecision.forPlayerId;
   const question = NKVD_QUESTIONS[state.pendingDecision.questionIndex];
 
   const next: GameState = { ...state, pendingDecision: null };
@@ -1261,6 +1393,17 @@ export function answerNkvdQuiz(state: GameState, answerText: string): GameState 
     sendToJail(next, playerId),
     `Answered "${answerText}" - wrong (the answer was "${question.answer}") - sent to jail.`,
   );
+}
+
+/** Resolves Rubber duck's jail-offer: sends the co-located player to jail if `sendToJailChoice` is true, otherwise just dismisses it. */
+export function resolveRubberDuckEncounter(state: GameState, sendToJailChoice: boolean): GameState {
+  if (!state.rubberDuckEncounter) return state;
+  const { targetPlayerId } = state.rubberDuckEncounter;
+  const next: GameState = { ...state, rubberDuckEncounter: null };
+  if (!sendToJailChoice) {
+    return logEvent(next, 'Chose not to send them to jail.');
+  }
+  return logEvent(sendToJail(next, targetPlayerId), "Sent them to jail (Stalin's body-double).");
 }
 
 /**
@@ -1317,6 +1460,12 @@ export function endTurn(state: GameState): GameState {
   let next = state.players[endingPlayerId].inJail
     ? chargeJailBribe(state, endingPlayerId)
     : state;
+
+  // Rubber duck's jail-offer lapses (implicitly "no") if their turn ends
+  // without acting on it.
+  if (next.rubberDuckEncounter?.rubberDuckPlayerId === endingPlayerId) {
+    next = { ...next, rubberDuckEncounter: null };
+  }
 
   next = tickChernobyl(next, endingPlayerId);
 

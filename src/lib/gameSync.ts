@@ -19,6 +19,8 @@ import {
   devSetRoubles,
   endTurn,
   resolveCardTarget,
+  resolveCatRedirect,
+  resolveRubberDuckEncounter,
   rollDice,
   skipPurchase,
   useDenounceCollaborators,
@@ -157,6 +159,22 @@ export async function devJumpToTileAndSync(
   tileId: number,
 ) {
   await writeGameState(roomCode, devJumpToTile(game, tileId));
+}
+
+export async function resolveCatRedirectAndSync(
+  roomCode: string,
+  game: GameState,
+  targetPlayerId: string | null,
+) {
+  await writeGameState(roomCode, resolveCatRedirect(game, targetPlayerId));
+}
+
+export async function resolveRubberDuckEncounterAndSync(
+  roomCode: string,
+  game: GameState,
+  sendToJailChoice: boolean,
+) {
+  await writeGameState(roomCode, resolveRubberDuckEncounter(game, sendToJailChoice));
 }
 
 export async function devDrawCardAndSync(

@@ -80,7 +80,13 @@ export type PieceId =
   | 'car'
   | 'iron'
   | 'thimble'
-  | 'dog';
+  | 'dog'
+  | 'wheelBarrel'
+  | 'hat'
+  | 'penguin'
+  | 'cat'
+  | 'rubberDuck'
+  | 'trex';
 
 export interface PieceDefinition {
   id: PieceId;
@@ -132,18 +138,26 @@ export interface GamePlayerState {
  * A decision the current player must make before their turn can end:
  * buy the property they just landed on, give away everything to claim
  * an unowned Volga, pick which card to draw (Car on Communist Test,
- * Dog on No Chance - their Special Power), pick a target for a card
- * that needs one (Siege of Stalingrad, Double Agent, Phone Call from
- * Stalin), answer NKVD's doctrine question, or acknowledge a drawn
- * Communist Test/No Chance card before play continues.
+ * Dog on No Chance - their Special Power), choose to keep a drawn card
+ * or hand its whole effect to another player (Cat's Special Power),
+ * pick a target for a card that needs one (Siege of Stalingrad, Double
+ * Agent, Phone Call from Stalin), answer NKVD's doctrine question, or
+ * acknowledge a drawn Communist Test/No Chance card before play
+ * continues.
+ *
+ * cardTarget/nkvdQuiz/cardDrawn carry `forPlayerId` - normally the
+ * drawer, but when Cat redirects a card, this is whoever they gave it
+ * to instead. UI and resolution both key off this, not just "whoever's
+ * turn it is."
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
   | { type: 'volgaOffer'; tileId: number }
   | { type: 'cardChoice'; deck: CardDeck }
-  | { type: 'cardTarget'; cardId: string }
-  | { type: 'nkvdQuiz'; questionIndex: number }
-  | { type: 'cardDrawn'; cardId: string };
+  | { type: 'catRedirect'; cardId: string }
+  | { type: 'cardTarget'; cardId: string; forPlayerId: string }
+  | { type: 'nkvdQuiz'; questionIndex: number; forPlayerId: string }
+  | { type: 'cardDrawn'; cardId: string; forPlayerId: string };
 
 export interface GameState {
   /** Player IDs in turn order. */
@@ -179,6 +193,16 @@ export interface GameState {
   trotskyHidingSpot: number | null;
   /** Show Trial: a vote in progress on whether to release or Disappear a jailed player. Runs independently of turns - any player can cast a vote at any time, not just the current one. Null when no vote is active. */
   activeVote: ShowTrialVote | null;
+  /**
+   * Rubber duck's power: set when Rubber duck's own move lands them on a
+   * tile another player already occupies. Runs independently of
+   * pendingDecision (like activeVote) rather than blocking the turn,
+   * since the tile they landed on might already have its own pending
+   * decision (e.g. an unowned property's purchase prompt) - jailing is
+   * optional and shouldn't compete for that one slot. Lapses (implicitly
+   * "no") if Rubber duck ends their turn without acting on it.
+   */
+  rubberDuckEncounter: { rubberDuckPlayerId: string; targetPlayerId: string } | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }

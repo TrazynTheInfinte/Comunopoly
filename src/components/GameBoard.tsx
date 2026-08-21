@@ -15,10 +15,12 @@ import {
 import type { Room } from '../types/room';
 import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
+import CatRedirectPrompt from './CatRedirectPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
 import PieceInfoPanel from './PieceInfoPanel';
+import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import './GameBoard.css';
 
@@ -52,7 +54,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       ? getTile(game.pendingDecision.tileId)
       : null;
   const pendingCard =
-    game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
+    game.pendingDecision?.type === 'cardDrawn' && game.pendingDecision.forPlayerId === playerId
+      ? findCard(game.pendingDecision.cardId)
+      : null;
   const me = game.players[playerId];
   const canAccuseOfTrotsky =
     isMyTurn && game.trotskyHidingSpot !== null && me?.position === game.trotskyHidingSpot;
@@ -165,7 +169,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         </div>
       )}
 
-      {isMyTurn && pendingCard && (
+      {pendingCard && (
         <div className="purchase-prompt card-prompt">
           <p className="card-title">{pendingCard.title}</p>
           <p>{pendingCard.text}</p>
@@ -179,8 +183,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
       )}
 
-      {isMyTurn && game.pendingDecision?.type === 'cardTarget' && (
-        <CardTargetPrompt
+      {isMyTurn && game.pendingDecision?.type === 'catRedirect' && (
+        <CatRedirectPrompt
           cardId={game.pendingDecision.cardId}
           room={room}
           roomCode={roomCode}
@@ -189,13 +193,27 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         />
       )}
 
-      {isMyTurn && game.pendingDecision?.type === 'nkvdQuiz' && (
-        <NkvdQuizPrompt
-          questionIndex={game.pendingDecision.questionIndex}
-          roomCode={roomCode}
-          game={game}
-        />
-      )}
+      {game.pendingDecision?.type === 'cardTarget' &&
+        game.pendingDecision.forPlayerId === playerId && (
+          <CardTargetPrompt
+            cardId={game.pendingDecision.cardId}
+            room={room}
+            roomCode={roomCode}
+            playerId={playerId}
+            game={game}
+          />
+        )}
+
+      {game.pendingDecision?.type === 'nkvdQuiz' &&
+        game.pendingDecision.forPlayerId === playerId && (
+          <NkvdQuizPrompt
+            questionIndex={game.pendingDecision.questionIndex}
+            roomCode={roomCode}
+            game={game}
+          />
+        )}
+
+      <RubberDuckEncounterBanner room={room} roomCode={roomCode} playerId={playerId} game={game} />
 
       {canAccuseOfTrotsky && (
         <div className="purchase-prompt card-prompt">
