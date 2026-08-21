@@ -6,6 +6,7 @@ import {
   accuseOfTrotsky,
   acknowledgeCard,
   answerNkvdQuiz,
+  buildHouse,
   buyProperty,
   callShowTrial,
   castShowTrialVote,
@@ -22,6 +23,7 @@ import {
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   rollDice,
+  sellHouse,
   skipPurchase,
   useDenounceCollaborators,
   useSecretInformant,
@@ -175,6 +177,24 @@ export async function resolveRubberDuckEncounterAndSync(
   sendToJailChoice: boolean,
 ) {
   await writeGameState(roomCode, resolveRubberDuckEncounter(game, sendToJailChoice));
+}
+
+export async function buildHouseAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  tileId: number,
+) {
+  await writeGameState(roomCode, buildHouse(game, playerId, tileId));
+}
+
+export async function sellHouseAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  tileId: number,
+) {
+  await writeGameState(roomCode, sellHouse(game, playerId, tileId));
 }
 
 export async function devDrawCardAndSync(

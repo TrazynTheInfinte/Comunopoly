@@ -4,6 +4,7 @@ import {
   accuseOfTrotsky,
   acknowledgeCard,
   answerNkvdQuiz,
+  buildHouse,
   buyProperty,
   callShowTrial,
   castShowTrialVote,
@@ -19,6 +20,7 @@ import {
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   rollDice,
+  sellHouse,
   skipPurchase,
   useDenounceCollaborators,
   useSecretInformant,
@@ -138,10 +140,10 @@ describe('skipPurchase', () => {
 });
 
 describe('rent', () => {
-  it('charges a flat percentage of price for landing on a property someone else owns', () => {
+  it('charges base (no-house) rent for landing on a property someone else owns', () => {
     let state = createInitialGameState(PLAYERS);
-    // p1 buys Moscow Metro (tile 6, price 100). Non-double roll so the
-    // turn actually passes to p2 afterwards.
+    // p1 buys Moscow Metro (tile 6, price 100, base rent 6). Non-double
+    // roll so the turn actually passes to p2 afterwards.
     state = devSetForcedRoll(state, [2, 4]);
     state = rollDice(state);
     state = buyProperty(state);
@@ -151,7 +153,7 @@ describe('rent', () => {
     state = devSetForcedRoll(state, [2, 4]);
     state = rollDice(state);
 
-    const expectedRent = Math.round(100 * 0.2); // 20
+    const expectedRent = 6;
     expect(state.players.p2.roubles).toBe(1000 - expectedRent);
     expect(state.players.p1.roubles).toBe(1000 - 100 + expectedRent);
   });
@@ -172,7 +174,7 @@ describe('rent', () => {
     state = devSetForcedRoll(state, [2, 4]); // p2 lands on tile 6 again
     state = rollDice(state);
 
-    expect(state.players.p2.roubles).toBe(1000 - 20); // still pays rent
+    expect(state.players.p2.roubles).toBe(1000 - 6); // still pays rent
     expect(state.players.p1.roubles).toBe(1000 - 100); // but the jailed owner never receives it
   });
 
@@ -796,7 +798,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedRoll(state, [2, 4]); // p2: 0 + 6 -> tile 6, owned by blacklisted p1
     state = rollDice(state);
 
-    expect(state.players.p2.roubles).toBe(1000 - 20); // still pays
+    expect(state.players.p2.roubles).toBe(1000 - 6); // still pays
     expect(state.players.p1.roubles).toBe(1000); // but blacklisted owner never receives it
   });
 
@@ -1771,5 +1773,235 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
 
     expect(resolveCatRedirect(state, 'p1')).toBe(before); // can't redirect to self
     expect(resolveCatRedirect(state, 'not-a-real-player')).toBe(before);
+  });
+});
+
+describe('houses and hotels', () => {
+  // lightBlue group: tiles 6 (Moscow Metro), 8 (Vermont Avenue), 9
+  // (Alexander Garden). House cost 50; rentTable [6, 30, 90, 270, 400, 550].
+  function withFullLightBlueGroup(state: GameState, playerId: string): GameState {
+    return {
+      ...state,
+      players: {
+        ...state.players,
+        [playerId]: { ...state.players[playerId], ownedTileIds: [6, 8, 9] },
+      },
+    };
+  }
+
+  it('refuses to build without owning the whole collection', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6, 8] } }, // missing 9
+    };
+    const before = state;
+
+    state = buildHouse(state, 'p1', 6);
+
+    expect(state).toBe(before);
+  });
+
+  it('builds a house: deducts cost, increments the count, draws from the bank supply', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+
+    state = buildHouse(state, 'p1', 6);
+
+    expect(state.players.p1.roubles).toBe(1000 - 50);
+    expect(state.propertyHouses[6]).toBe(1);
+    expect(state.housesRemaining).toBe(31);
+  });
+
+  it('the 5th build on a property becomes a hotel, returning its 4 houses to the bank', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+
+    for (let i = 0; i < 4; i++) {
+      state = buildHouse(state, 'p1', 6);
+    }
+    expect(state.propertyHouses[6]).toBe(4);
+    expect(state.housesRemaining).toBe(28);
+
+    state = buildHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBe(5);
+    expect(state.hotelsRemaining).toBe(11);
+    expect(state.housesRemaining).toBe(32); // the 4 houses came back
+  });
+
+  it('refuses to build past a hotel', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = { ...state, propertyHouses: { 6: 5 } };
+    const atHotel = state;
+
+    expect(buildHouse(state, 'p1', 6)).toBe(atHotel);
+  });
+
+  it("refuses to build without enough roubles", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 10 } } };
+    const broke = state;
+
+    expect(buildHouse(state, 'p1', 6)).toBe(broke);
+  });
+
+  it('an empty bank supply blocks building even with a full collection and enough cash', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = { ...state, housesRemaining: 0 };
+    const before = state;
+
+    state = buildHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBeUndefined();
+    expect(state.players.p1.roubles).toBe(before.players.p1.roubles);
+  });
+
+  it('rent scales with the number of houses on the property', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = buildHouse(state, 'p1', 6);
+    state = buildHouse(state, 'p1', 6); // 2 houses -> rentTable[2] = 90
+
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000 - 90);
+    expect(state.players.p1.roubles).toBe(1000 - 100 + 90); // paid 50x2 to build, then collected rent
+  });
+
+  it('sells a house back for half price, returning it to the bank supply', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = buildHouse(state, 'p1', 6);
+
+    state = sellHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBe(0);
+    expect(state.players.p1.roubles).toBe(1000 - 50 + 25);
+    expect(state.housesRemaining).toBe(32);
+  });
+
+  it('selling a hotel converts it back to 4 houses and refunds half its cost', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = { ...state, propertyHouses: { 6: 5 }, hotelsRemaining: 11, housesRemaining: 32 };
+
+    state = sellHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBe(4);
+    expect(state.hotelsRemaining).toBe(12);
+    expect(state.housesRemaining).toBe(28);
+    expect(state.players.p1.roubles).toBe(1000 + 25);
+  });
+
+  it('refuses to break down a hotel if the bank has fewer than 4 houses available', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withFullLightBlueGroup(state, 'p1');
+    state = { ...state, propertyHouses: { 6: 5 }, hotelsRemaining: 11, housesRemaining: 2 };
+
+    state = sellHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBe(5); // still a hotel
+    expect(state.hotelsRemaining).toBe(11);
+    expect(state.housesRemaining).toBe(2);
+    expect(state.players.p1.roubles).toBe(1000); // no refund
+  });
+});
+
+describe("Hat's power (free house on completing a collection)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'hat' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('grants a free house the moment a normal purchase completes a collection', () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [1] } }, // already owns tile 1 (purple)
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 2]); // -> tile 3, the other purple property
+
+    state = rollDice(state);
+    state = buyProperty(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 3]));
+    expect(state.hatFreeHouseGroups).toContain('purple');
+    // Tied at 0 houses each, so the free house lands on the lower tile ID (1).
+    expect(state.propertyHouses[1]).toBe(1);
+    expect(state.housesRemaining).toBe(31);
+  });
+
+  it('also grants the free house when a collection completes via a forced seizure', () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [1] },
+        p2: { ...state.players.p2, ownedTileIds: [3] },
+      },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'siegeOfStalingrad');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+
+    state = resolveCardTarget(state, { targetTileId: 3 });
+
+    expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 3]));
+    expect(state.hatFreeHouseGroups).toContain('purple');
+    expect(state.propertyHouses[1]).toBe(1);
+  });
+
+  it("does not re-grant a free house for a group it's already been rewarded for", () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [1, 3] } },
+      hatFreeHouseGroups: ['purple'],
+      propertyHouses: { 1: 1 },
+      housesRemaining: 31,
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'phoneCallFromStalin');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0.99); // internal die roll -> 6, not 1
+
+    // Re-claims an already-owned tile - routes back through giveTileTo,
+    // re-triggering the Hat check, but the group is already recorded.
+    state = resolveCardTarget(state, { targetTileId: 1 });
+
+    expect(state.propertyHouses[1]).toBe(1); // unchanged - no second freebie
+    expect(state.hatFreeHouseGroups).toEqual(['purple']); // still just the one entry
+  });
+
+  it('Disappearing clears the reward record for groups Hat no longer owns, and returns houses to the bank', () => {
+    let state = createInitialGameState(players);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [1, 3] } },
+      hatFreeHouseGroups: ['purple'],
+      propertyHouses: { 1: 1 },
+      housesRemaining: 31,
+    };
+    state = devSetForcedCard(state, 'accident'); // disappearStub via a real card path
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.hatFreeHouseGroups).toEqual([]);
+    expect(state.propertyHouses[1]).toBe(0);
+    expect(state.housesRemaining).toBe(32); // the house came back to the bank
   });
 });

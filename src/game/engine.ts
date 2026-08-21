@@ -5,15 +5,11 @@ import {
   findCard,
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
-import type { CardDeck, GameState, GamePlayerState, PieceId } from '../types/game';
+import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId } from '../types/game';
 
 const STARTING_ROUBLES = 1000;
 const STOY_LANDING_BONUS = 200;
 const STOY_PASS_FEE = 50;
-// Placeholder flat rent - a real price/house-tier rent table is a later
-// increment. For now, landing on someone's property costs a flat
-// percentage of what they paid for it.
-const PROPERTY_RENT_RATE = 0.2;
 // Classic Monopoly railroad rent: doubles with each additional railroad
 // the same owner has. All 4 of our railroads are priced 200, same as the
 // classic board, so we can reuse this table directly.
@@ -29,6 +25,20 @@ const KREMLIN_BONUS = 200;
 const CHERNOBYL_COUNTDOWN_TURNS = 3;
 const TELEGRAPH_UNION_TOLL = 20; // split 10 to the Commissar, 10 to the State
 const PROPERTY_TILE_IDS = BOARD.filter((t) => t.kind === 'property').map((t) => t.id);
+// Standard Monopoly bank supply. Real Monopoly resolves a shortage with
+// an auction between players - we don't have one, so running dry just
+// blocks further building until someone sells houses back.
+const STARTING_HOUSES = 32;
+const STARTING_HOTELS = 12;
+const COLOR_GROUPS: ColorGroup[] = ['purple', 'lightBlue', 'pink', 'orange', 'red', 'yellow', 'green'];
+
+function tileIdsInGroup(group: ColorGroup): number[] {
+  return BOARD.filter((t) => t.kind === 'property' && t.colorGroup === group).map((t) => t.id);
+}
+
+function ownsFullGroup(state: GameState, playerId: string, group: ColorGroup): boolean {
+  return tileIdsInGroup(group).every((id) => state.players[playerId].ownedTileIds.includes(id));
+}
 
 /** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned, and both card decks get shuffled. */
 export function createInitialGameState(
@@ -78,6 +88,10 @@ export function createInitialGameState(
     trotskyHidingSpot: null,
     activeVote: null,
     rubberDuckEncounter: null,
+    propertyHouses: {},
+    housesRemaining: STARTING_HOUSES,
+    hotelsRemaining: STARTING_HOTELS,
+    hatFreeHouseGroups: [],
     log: ['The game begins.'],
   };
 }
@@ -180,8 +194,35 @@ function disappearStub(
   reason: string,
 ): GameState {
   const player = state.players[playerId];
+
+  // Bankrupt-to-the-bank: any houses/hotels on this player's properties
+  // return to the bank's supply (the tiles themselves just go back to
+  // being unowned, same simplification as everything else in this
+  // TEMPORARY placeholder).
+  let propertyHouses = state.propertyHouses;
+  let housesRemaining = state.housesRemaining;
+  let hotelsRemaining = state.hotelsRemaining;
+  for (const tileId of player.ownedTileIds) {
+    const count = propertyHouses[tileId] ?? 0;
+    if (count === 0) continue;
+    if (count === 5) {
+      hotelsRemaining += 1;
+    } else {
+      housesRemaining += count;
+    }
+    propertyHouses = { ...propertyHouses, [tileId]: 0 };
+  }
+
   let next: GameState = {
     ...state,
+    propertyHouses,
+    housesRemaining,
+    hotelsRemaining,
+    // Hat's piece stays with this player through Disappear (see the
+    // placeholder note above), so any groups already rewarded no longer
+    // apply - they've lost every property. Clearing this lets completing
+    // the same group again later re-trigger the free house.
+    hatFreeHouseGroups: player.pieceId === 'hat' ? [] : state.hatFreeHouseGroups,
     players: {
       ...state.players,
       [playerId]: {
@@ -235,13 +276,65 @@ function giveTileTo(
   playerId: string,
 ): GameState {
   const player = state.players[playerId];
-  return {
+  const next: GameState = {
     ...state,
     players: {
       ...state.players,
       [playerId]: { ...player, ownedTileIds: [...player.ownedTileIds, tileId] },
     },
   };
+  // Every mechanic that hands a player a tile - buying, Wheel Barrel/
+  // T-Rex's auto-seize, The Volga, Siege of Stalingrad, Collectivization
+  // Drive, Phone Call from Stalin - routes through here, so this is the
+  // one place that needs to check Hat's power.
+  return maybeGrantHatFreeHouse(next, playerId);
+}
+
+/**
+ * Hat's power: the moment Hat completes a full color-group collection
+ * (by any means), they get one free house on whichever property in that
+ * group currently has the fewest houses (ties broken by lowest tile ID).
+ * Tracked per color group via hatFreeHouseGroups so it only fires once
+ * per completion, not every subsequent tile shuffle within an
+ * already-complete group.
+ */
+function maybeGrantHatFreeHouse(state: GameState, playerId: string): GameState {
+  if (state.players[playerId].pieceId !== 'hat') return state;
+
+  let next = state;
+  for (const group of COLOR_GROUPS) {
+    if (next.hatFreeHouseGroups.includes(group)) continue;
+    if (!ownsFullGroup(next, playerId, group)) continue;
+
+    const target = tileIdsInGroup(group)
+      .map((id) => ({ id, houses: next.propertyHouses[id] ?? 0 }))
+      .sort((a, b) => a.houses - b.houses || a.id - b.id)[0];
+
+    next = { ...next, hatFreeHouseGroups: [...next.hatFreeHouseGroups, group] };
+
+    if (target.houses >= 5) continue; // already maxed out, nothing to grant
+    if (target.houses === 4) {
+      if (next.hotelsRemaining <= 0) continue; // no hotel in the bank - skip the reward
+      next = {
+        ...next,
+        propertyHouses: { ...next.propertyHouses, [target.id]: 5 },
+        hotelsRemaining: next.hotelsRemaining - 1,
+        housesRemaining: next.housesRemaining + 4,
+      };
+    } else {
+      if (next.housesRemaining <= 0) continue; // no houses in the bank - skip the reward
+      next = {
+        ...next,
+        propertyHouses: { ...next.propertyHouses, [target.id]: target.houses + 1 },
+        housesRemaining: next.housesRemaining - 1,
+      };
+    }
+    next = logEvent(
+      next,
+      `Completed the collection - Nepman gets a free house on ${getTile(target.id).name}.`,
+    );
+  }
+  return next;
 }
 
 function transferTileOwnership(
@@ -898,7 +991,7 @@ function resolveLanding(
       const rent =
         tile.kind === 'railroad'
           ? RAILROAD_RENT_BY_COUNT[railroadsOwnedBy(state, ownerId) - 1]
-          : Math.round(tile.price * PROPERTY_RENT_RATE);
+          : tile.rentTable[state.propertyHouses[tile.id] ?? 0];
 
       const next = payRoubles(state, playerId, rent);
       const owner = state.players[ownerId];
@@ -1142,17 +1235,7 @@ export function buyProperty(state: GameState): GameState {
   if (player.roubles < price) return state; // can't afford it - use Skip instead
 
   let next = payRoubles(state, playerId, price);
-  next = {
-    ...next,
-    pendingDecision: null,
-    players: {
-      ...next.players,
-      [playerId]: {
-        ...next.players[playerId],
-        ownedTileIds: [...next.players[playerId].ownedTileIds, tile.id],
-      },
-    },
-  };
+  next = { ...giveTileTo(next, tile.id, playerId), pendingDecision: null };
   return logEvent(next, `Bought ${tile.name} for ${price} roubles.`);
 }
 
@@ -1404,6 +1487,81 @@ export function resolveRubberDuckEncounter(state: GameState, sendToJailChoice: b
     return logEvent(next, 'Chose not to send them to jail.');
   }
   return logEvent(sendToJail(next, targetPlayerId), "Sent them to jail (Stalin's body-double).");
+}
+
+/**
+ * Builds one house on a property (or, from 4 houses, the hotel that
+ * replaces them) - same rules as base Monopoly: the player must own
+ * every property in that color group, and the bank's house/hotel supply
+ * must have one available. A hotel purchase returns its 4 houses to the
+ * bank's supply. No even-building requirement across the group - any
+ * owned property in a completed group can be built on independently.
+ */
+export function buildHouse(state: GameState, playerId: string, tileId: number): GameState {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property') return state;
+  const player = state.players[playerId];
+  if (!player.ownedTileIds.includes(tileId)) return state;
+  if (!ownsFullGroup(state, playerId, tile.colorGroup)) return state;
+
+  const current = state.propertyHouses[tileId] ?? 0;
+  if (current >= 5) return state; // already a hotel
+  if (player.roubles < tile.houseCost) return state;
+
+  if (current === 4) {
+    if (state.hotelsRemaining <= 0) {
+      return logEvent(state, `No hotels left in the bank - can't build on ${tile.name}.`);
+    }
+    const next: GameState = {
+      ...payRoubles(state, playerId, tile.houseCost),
+      propertyHouses: { ...state.propertyHouses, [tileId]: 5 },
+      hotelsRemaining: state.hotelsRemaining - 1,
+      housesRemaining: state.housesRemaining + 4,
+    };
+    return logEvent(next, `Built a hotel on ${tile.name} for ${tile.houseCost} roubles.`);
+  }
+
+  if (state.housesRemaining <= 0) {
+    return logEvent(state, `No houses left in the bank - can't build on ${tile.name}.`);
+  }
+  const next: GameState = {
+    ...payRoubles(state, playerId, tile.houseCost),
+    propertyHouses: { ...state.propertyHouses, [tileId]: current + 1 },
+    housesRemaining: state.housesRemaining - 1,
+  };
+  return logEvent(next, `Built a house on ${tile.name} for ${tile.houseCost} roubles.`);
+}
+
+/** Sells one house (or, from a hotel, converts it back to 4 houses) back to the bank for half its cost - standard Monopoly rule. */
+export function sellHouse(state: GameState, playerId: string, tileId: number): GameState {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property') return state;
+  const player = state.players[playerId];
+  if (!player.ownedTileIds.includes(tileId)) return state;
+
+  const current = state.propertyHouses[tileId] ?? 0;
+  if (current === 0) return state;
+  const refund = Math.floor(tile.houseCost / 2);
+
+  if (current === 5) {
+    if (state.housesRemaining < 4) {
+      return logEvent(state, `Not enough houses left in the bank to break down the hotel on ${tile.name}.`);
+    }
+    const next: GameState = {
+      ...giveRoubles(state, playerId, refund),
+      propertyHouses: { ...state.propertyHouses, [tileId]: 4 },
+      hotelsRemaining: state.hotelsRemaining + 1,
+      housesRemaining: state.housesRemaining - 4,
+    };
+    return logEvent(next, `Sold the hotel on ${tile.name} back to the bank for ${refund} roubles (returns as 4 houses).`);
+  }
+
+  const next: GameState = {
+    ...giveRoubles(state, playerId, refund),
+    propertyHouses: { ...state.propertyHouses, [tileId]: current - 1 },
+    housesRemaining: state.housesRemaining + 1,
+  };
+  return logEvent(next, `Sold a house on ${tile.name} back to the bank for ${refund} roubles.`);
 }
 
 /**

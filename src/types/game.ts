@@ -41,6 +41,10 @@ export interface PropertyTile extends BaseTile {
   kind: 'property';
   price: number;
   colorGroup: ColorGroup;
+  /** Cost of one house (or the hotel that replaces the 4th). Same real-Monopoly numbers as rentTable - see data/board.ts. */
+  houseCost: number;
+  /** Rent at 0/1/2/3/4 houses, then a hotel - index 5 = hotel, matching the propertyHouses count on GameState (0-4 houses, 5 = hotel). */
+  rentTable: [number, number, number, number, number, number];
 }
 
 export interface RailroadTile extends BaseTile {
@@ -203,6 +207,21 @@ export interface GameState {
    * "no") if Rubber duck ends their turn without acting on it.
    */
   rubberDuckEncounter: { rubberDuckPlayerId: string; targetPlayerId: string } | null;
+  /**
+   * Houses built on each property tile: 0-4 is a house count, 5 means a
+   * hotel (which replaced the 4 houses - see buildHouse/sellHouse in
+   * game/engine.ts). Keyed by tile ID rather than by owner, so a
+   * property's houses simply travel with it whenever a forced-transfer
+   * mechanic (Wheel Barrel, T-Rex, Siege of Stalingrad, The Volga, etc.)
+   * changes who owns it - no special-casing needed there. Missing/absent
+   * entries mean 0 (no houses).
+   */
+  propertyHouses: Record<number, number>;
+  /** Bank supply, standard Monopoly counts (32 houses, 12 hotels) - building is blocked once these run out, since there's no auction system to resolve a shortage. */
+  housesRemaining: number;
+  hotelsRemaining: number;
+  /** Color groups Hat has already been granted a free house for (Hat's Special Power) - prevents re-granting every time ownership of an already-rewarded group churns. Cleared for a group if Hat later loses that group (e.g. Disappearing), so completing it again re-triggers the reward. */
+  hatFreeHouseGroups: ColorGroup[];
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }

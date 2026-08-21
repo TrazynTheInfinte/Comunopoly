@@ -1,14 +1,22 @@
 import { useState } from 'react';
-import { getTile } from '../data/board';
+import { BOARD, getTile } from '../data/board';
 import { findCard } from '../data/cards';
 import {
+  buildHouseAndSync,
   callShowTrialAndSync,
+  sellHouseAndSync,
   useDenounceCollaboratorsAndSync,
   useSecretInformantAndSync,
 } from '../lib/gameSync';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
 import './Hand.css';
+
+function houseCountLabel(count: number): string {
+  if (count === 5) return 'Hotel';
+  if (count === 0) return 'No houses';
+  return `${count} house${count === 1 ? '' : 's'}`;
+}
 
 interface HandProps {
   room: Room;
@@ -44,20 +52,30 @@ function Hand({ room, roomCode, playerId, game }: HandProps) {
         const key = `property-${tileId}`;
         const isExpanded = expandedKey === key;
         return (
-          <button
-            key={key}
-            type="button"
-            className={`hand-card ${isExpanded ? 'is-expanded' : ''}`}
-            onClick={() => toggle(key)}
-          >
-            <span className="hand-card-name">{tile.name}</span>
+          <div key={key} className={`hand-card hand-card-special ${isExpanded ? 'is-expanded' : ''}`}>
+            <button type="button" className="hand-card-header" onClick={() => toggle(key)}>
+              <span className="hand-card-name">{tile.name}</span>
+            </button>
             {isExpanded && (
-              <span className="hand-card-detail">
-                {(tile.kind === 'property' || tile.kind === 'railroad') && `Price: ₽${tile.price}`}
-                {tile.kind === 'utility' && 'Utility'}
-              </span>
+              <div className="hand-card-detail">
+                {tile.kind === 'property' ? (
+                  <>
+                    <p>
+                      Price: ₽{tile.price}
+                      <br />
+                      {houseCountLabel(game.propertyHouses[tileId] ?? 0)}
+                    </p>
+                    <HouseControls roomCode={roomCode} playerId={playerId} game={game} tileId={tileId} />
+                  </>
+                ) : (
+                  <p>
+                    {tile.kind === 'railroad' && `Price: ₽${tile.price}`}
+                    {tile.kind === 'utility' && 'Utility'}
+                  </p>
+                )}
+              </div>
             )}
-          </button>
+          </div>
         );
       })}
 
@@ -86,6 +104,57 @@ function Hand({ room, roomCode, playerId, game }: HandProps) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface HouseControlsProps {
+  roomCode: string;
+  playerId: string;
+  game: GameState;
+  tileId: number;
+}
+
+// Build/sell houses on a property card - only shown once the viewing
+// player owns every property in that color group (standard Monopoly
+// rule; no even-building requirement across the group in this variant).
+function HouseControls({ roomCode, playerId, game, tileId }: HouseControlsProps) {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property') return null;
+
+  const me = game.players[playerId];
+  const ownsFullGroup = BOARD.filter(
+    (t) => t.kind === 'property' && t.colorGroup === tile.colorGroup,
+  ).every((t) => me.ownedTileIds.includes(t.id));
+
+  if (!ownsFullGroup) {
+    return <p className="hint">Own the whole collection to build.</p>;
+  }
+
+  const houses = game.propertyHouses[tileId] ?? 0;
+  const isHotel = houses === 5;
+  const canBuild =
+    !isHotel &&
+    me.roubles >= tile.houseCost &&
+    (houses === 4 ? game.hotelsRemaining > 0 : game.housesRemaining > 0);
+  const canSell = houses > 0 && !(isHotel && game.housesRemaining < 4);
+
+  return (
+    <div className="hand-card-action">
+      <button
+        type="button"
+        onClick={() => buildHouseAndSync(roomCode, game, playerId, tileId)}
+        disabled={!canBuild}
+      >
+        {houses === 4 ? `Build Hotel (₽${tile.houseCost})` : `Build House (₽${tile.houseCost})`}
+      </button>
+      <button
+        type="button"
+        onClick={() => sellHouseAndSync(roomCode, game, playerId, tileId)}
+        disabled={!canSell}
+      >
+        Sell {isHotel ? 'Hotel' : 'House'} (₽{Math.floor(tile.houseCost / 2)})
+      </button>
     </div>
   );
 }

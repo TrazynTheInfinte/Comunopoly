@@ -68,12 +68,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     id: 'hat',
     name: 'Hat',
     title: 'Nepman',
-    // TODO(houses): "When you complete a collection, get a free house" -
-    // there's no house/hotel system yet (rent is still a flat
-    // placeholder rate). Wire this up once houses exist: on completing a
-    // full color-group collection, grant Hat one free house on it.
-    powerDescription:
-      'When you complete a collection, get a free house. [Not yet implemented - no house system exists yet.]',
+    powerDescription: 'When you complete a collection, get a free house.',
     winConditionDescription: "You're shot. You score nothing. That's your score.",
   },
   {

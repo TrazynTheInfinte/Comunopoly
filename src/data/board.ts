@@ -4,6 +4,13 @@ import type { BoardTile } from '../types/game';
 // boardPrintable.pdf (MaiRiosIPla/communopoly). Order goes clockwise
 // starting at STOY, matching the "collect on landing, pay 50 to pass"
 // arrow printed next to it on the board sheet.
+//
+// Every property's price matches classic Monopoly's board exactly,
+// group for group, except the purple group (50/60 here vs 60/60 there) -
+// close enough that houses/hotels reuse classic Monopoly's real
+// houseCost/rentTable numbers directly per tile (same idea already used
+// for railroad rent - see RAILROAD_RENT_BY_COUNT in game/engine.ts).
+// rentTable is [0 houses, 1, 2, 3, 4, hotel].
 export const BOARD: BoardTile[] = [
   { id: 0, kind: 'go', name: 'STOY' },
   {
@@ -12,6 +19,8 @@ export const BOARD: BoardTile[] = [
     name: 'Machine Tractor Station 37',
     price: 50,
     colorGroup: 'purple',
+    houseCost: 50,
+    rentTable: [2, 10, 30, 90, 160, 250],
   },
   { id: 2, kind: 'card', name: 'Communist Test', deck: 'communistTest' },
   {
@@ -20,6 +29,8 @@ export const BOARD: BoardTile[] = [
     name: 'Gulag Archipelago',
     price: 60,
     colorGroup: 'purple',
+    houseCost: 50,
+    rentTable: [4, 20, 60, 180, 320, 450],
   },
   { id: 4, kind: 'card', name: 'No Chance', deck: 'noChance' },
   {
@@ -34,6 +45,8 @@ export const BOARD: BoardTile[] = [
     name: 'Moscow Metro',
     price: 100,
     colorGroup: 'lightBlue',
+    houseCost: 50,
+    rentTable: [6, 30, 90, 270, 400, 550],
   },
   { id: 7, kind: 'card', name: 'No Chance', deck: 'noChance' },
   {
@@ -42,6 +55,8 @@ export const BOARD: BoardTile[] = [
     name: 'Vermont Avenue',
     price: 100,
     colorGroup: 'lightBlue',
+    houseCost: 50,
+    rentTable: [6, 30, 90, 270, 400, 550],
   },
   {
     id: 9,
@@ -49,6 +64,8 @@ export const BOARD: BoardTile[] = [
     name: 'Alexander Garden',
     price: 120,
     colorGroup: 'lightBlue',
+    houseCost: 50,
+    rentTable: [8, 40, 100, 300, 450, 600],
   },
   { id: 10, kind: 'jail', name: 'Jail' },
   {
@@ -57,6 +74,8 @@ export const BOARD: BoardTile[] = [
     name: 'Nikolskaya Ulitsa',
     price: 140,
     colorGroup: 'pink',
+    houseCost: 100,
+    rentTable: [10, 50, 150, 450, 625, 750],
   },
   { id: 12, kind: 'utility', name: 'Chernobyl Power' },
   {
@@ -65,6 +84,8 @@ export const BOARD: BoardTile[] = [
     name: 'Poklonnaya Hill',
     price: 140,
     colorGroup: 'pink',
+    houseCost: 100,
+    rentTable: [10, 50, 150, 450, 625, 750],
   },
   {
     id: 14,
@@ -72,6 +93,8 @@ export const BOARD: BoardTile[] = [
     name: 'Petersburg (Leningrad)',
     price: 160,
     colorGroup: 'pink',
+    houseCost: 100,
+    rentTable: [12, 60, 180, 500, 700, 900],
   },
   {
     id: 15,
@@ -85,6 +108,8 @@ export const BOARD: BoardTile[] = [
     name: 'St. James Avenue',
     price: 180,
     colorGroup: 'orange',
+    houseCost: 100,
+    rentTable: [14, 70, 200, 550, 750, 950],
   },
   { id: 17, kind: 'card', name: 'Communist Test', deck: 'communistTest' },
   {
@@ -93,6 +118,8 @@ export const BOARD: BoardTile[] = [
     name: 'Mamayev Kurgan (Stalingrad)',
     price: 180,
     colorGroup: 'orange',
+    houseCost: 100,
+    rentTable: [14, 70, 200, 550, 750, 950],
   },
   {
     id: 19,
@@ -100,6 +127,8 @@ export const BOARD: BoardTile[] = [
     name: 'Kazan Cathedral',
     price: 200,
     colorGroup: 'orange',
+    houseCost: 100,
+    rentTable: [16, 80, 220, 600, 800, 1000],
   },
   { id: 20, kind: 'freeParking', name: 'Free Parking' },
   {
@@ -108,6 +137,8 @@ export const BOARD: BoardTile[] = [
     name: 'Barmaley Fountain',
     price: 220,
     colorGroup: 'red',
+    houseCost: 150,
+    rentTable: [18, 90, 250, 700, 875, 1050],
   },
   { id: 22, kind: 'card', name: 'No Chance', deck: 'noChance' },
   {
@@ -116,6 +147,8 @@ export const BOARD: BoardTile[] = [
     name: 'Red Square',
     price: 220,
     colorGroup: 'red',
+    houseCost: 150,
+    rentTable: [18, 90, 250, 700, 875, 1050],
   },
   {
     id: 24,
@@ -123,6 +156,8 @@ export const BOARD: BoardTile[] = [
     name: 'Uspenski Cathedral',
     price: 240,
     colorGroup: 'red',
+    houseCost: 150,
+    rentTable: [20, 100, 300, 750, 925, 1100],
   },
   {
     id: 25,
@@ -136,6 +171,8 @@ export const BOARD: BoardTile[] = [
     name: 'Teatro Bolshoi',
     price: 260,
     colorGroup: 'yellow',
+    houseCost: 150,
+    rentTable: [22, 110, 330, 800, 975, 1150],
   },
   {
     id: 27,
@@ -143,6 +180,8 @@ export const BOARD: BoardTile[] = [
     name: "Saint Basil's Cathedral",
     price: 260,
     colorGroup: 'yellow',
+    houseCost: 150,
+    rentTable: [22, 110, 330, 800, 975, 1150],
   },
   { id: 28, kind: 'utility', name: 'The Volga' },
   {
@@ -151,6 +190,8 @@ export const BOARD: BoardTile[] = [
     name: 'Garibaldi Ulitsa',
     price: 280,
     colorGroup: 'yellow',
+    houseCost: 150,
+    rentTable: [24, 120, 360, 850, 1025, 1200],
   },
   { id: 30, kind: 'goToJail', name: 'Go To Jail' },
   {
@@ -159,6 +200,8 @@ export const BOARD: BoardTile[] = [
     name: 'Manezh Square',
     price: 300,
     colorGroup: 'green',
+    houseCost: 200,
+    rentTable: [26, 130, 390, 900, 1100, 1275],
   },
   {
     id: 32,
@@ -166,6 +209,8 @@ export const BOARD: BoardTile[] = [
     name: "Lenin's Mausoleum",
     price: 300,
     colorGroup: 'green',
+    houseCost: 200,
+    rentTable: [26, 130, 390, 900, 1100, 1275],
   },
   { id: 33, kind: 'card', name: 'Communist Test', deck: 'communistTest' },
   {
@@ -174,6 +219,8 @@ export const BOARD: BoardTile[] = [
     name: 'Ulitsa Tverskaya',
     price: 320,
     colorGroup: 'green',
+    houseCost: 200,
+    rentTable: [28, 150, 450, 1000, 1200, 1400],
   },
   {
     id: 35,
