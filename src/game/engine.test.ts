@@ -3,13 +3,18 @@ import {
   acceptVolgaOffer,
   acknowledgeCard,
   buyProperty,
+  claimTrotskyHidingSpot,
   createInitialGameState,
   declineVolgaOffer,
   devSetForcedCard,
   devSetForcedRoll,
   endTurn,
+  resolveCardTarget,
   rollDice,
   skipPurchase,
+  useDenounceCollaborators,
+  useSecretInformant,
+  useShowTrial,
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import type { GameState } from '../types/game';
@@ -196,6 +201,12 @@ describe('jail', () => {
 
   it('sends a player to jail after three consecutive doubles instead of moving', () => {
     let state = createInitialGameState(PLAYERS);
+    // Start somewhere that two +4 moves land on plain properties, not a
+    // card tile - drawing a random card here would make this test flaky
+    // (e.g. a card that changes movingBackward or Disappears the player).
+    // (11, not 10/JAIL_POSITION, so the final assertion isn't trivially
+    // true just because we started there.)
+    state = withPosition(state, 'p1', 11);
     state = devSetForcedRoll(state, [2, 2]);
     state = rollDice(state);
     state = devSetForcedRoll(state, [2, 2]);
@@ -321,13 +332,13 @@ describe('The Kremlin', () => {
 });
 
 describe('NKVD HQ', () => {
-  it('sets skipNextTurn on the first visit', () => {
+  it('sets turnsToSkip on the first visit', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 30);
     state = devSetForcedRoll(state, [4, 5]); // 30 + 9 -> tile 39, NKVD HQ
     state = rollDice(state);
 
-    expect(state.players.p1.skipNextTurn).toBe(true);
+    expect(state.players.p1.turnsToSkip).toBe(1);
     expect(state.players.p1.nkvdVisits).toBe(1);
   });
 
@@ -366,12 +377,12 @@ it("skips a flagged player's turn when ending the previous turn", () => {
   let state = createInitialGameState(PLAYERS);
   state = {
     ...state,
-    players: { ...state.players, p2: { ...state.players.p2, skipNextTurn: true } },
+    players: { ...state.players, p2: { ...state.players.p2, turnsToSkip: 1 } },
   };
   state = endTurn(state); // p1 ends their turn; p2 should be skipped, landing back on p1
 
   expect(state.currentTurnIndex).toBe(0);
-  expect(state.players.p2.skipNextTurn).toBe(false);
+  expect(state.players.p2.turnsToSkip).toBe(0);
 });
 
 describe('Chernobyl Power', () => {
@@ -599,7 +610,10 @@ describe('Communist Test / No Chance cards', () => {
 
     expect(state.noChanceDrawPile).toHaveLength(NO_CHANCE_CARDS.length - 1);
     expect(state.noChanceDiscardPile).toHaveLength(1);
-    expect(state.pendingDecision?.type).toBe('cardDrawn');
+    // Whichever card actually got drawn, it's either awaiting
+    // acknowledgement or (for a target-needing card) awaiting a target -
+    // both are valid immediate outcomes of a real, non-forced draw.
+    expect(['cardDrawn', 'cardTarget']).toContain(state.pendingDecision?.type);
   });
 
   it('a forced card draw bypasses the pile entirely', () => {
@@ -630,13 +644,13 @@ describe('Communist Test / No Chance cards', () => {
   it('a card with no automated effect just gets shown, with no other state change', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 0);
-    state = devSetForcedCard(state, 'siegeOfStalingrad');
+    state = devSetForcedCard(state, 'politicalCorrectness');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
 
     expect(state.pendingDecision).toEqual({
       type: 'cardDrawn',
-      cardId: 'siegeOfStalingrad',
+      cardId: 'politicalCorrectness',
     });
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -674,7 +688,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
 
-    expect(state.players.p1.skipNextTurn).toBe(true);
+    expect(state.players.p1.turnsToSkip).toBe(1);
   });
 
   it('"Party Vanguard" grants two extra turns before play passes on', () => {
@@ -789,5 +803,343 @@ describe('Communist Test / No Chance cards', () => {
     // own first-visit bonus for landing there.
     expect(state.players.p1.roubles).toBe(1000 + 200);
     expect(state.players.p1.kremlinVisits).toBe(1);
+  });
+});
+
+describe('newly automated cards', () => {
+  it('"Go Into Hiding!" hides the drawer and Disappears anyone who lands on them', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'goIntoHiding');
+    state = devSetForcedRoll(state, [1, 3]); // -> tile 4
+    state = rollDice(state);
+
+    expect(state.players.p1.turnsToSkip).toBe(3);
+    expect(state.players.p1.hidingPosition).toBe(4);
+
+    state = acknowledgeCard(state);
+    state = endTurn(state); // p1 -> p2
+
+    state = devSetForcedCard(state, 'bankError'); // p2's own draw, kept deterministic
+    state = devSetForcedRoll(state, [1, 3]); // p2: 0 + 4 -> lands on p1's hiding spot too
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000); // Disappeared (reset)
+    expect(state.players.p1.hidingPosition).toBeNull();
+  });
+
+  it('"NKVD" (the card) jails on a low die roll, does nothing on a high one', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'nkvd');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0); // -> rolls a 1, "wrong answer"
+
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it('"Collectivization Drive!" redistributes money evenly and conserves total tradeable property', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 1200, ownedTileIds: [1, 3] },
+        p2: { ...state.players.p2, roubles: 800, ownedTileIds: [6] },
+      },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'collectivizationDrive');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p2.roubles).toBe(1000);
+    const totalTiles = state.players.p1.ownedTileIds.length + state.players.p2.ownedTileIds.length;
+    expect(totalTiles).toBe(3);
+  });
+
+  it("\"The Great Purge\" halves everyone's tradeable properties and Disappears one random player", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [1, 3, 6, 8] },
+        p2: { ...state.players.p2, ownedTileIds: [9, 11] },
+      },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'greatPurge');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0); // loser = turnOrder[0] = p1
+
+    expect(state.players.p1.roubles).toBe(1000); // Disappeared (reset)
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.players.p2.ownedTileIds).toHaveLength(1); // kept half of 2, rounded up to lose 1
+  });
+
+  describe('"Bestseller!"', () => {
+    it('rolling a 6 keeps the 500 roubles with no further consequence', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'bestseller');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0.99); // -> 6
+
+      expect(state.players.p1.roubles).toBe(1500);
+      expect(state.players.p1.inJail).toBe(false);
+    });
+
+    it('rolling a 1 Disappears the player after collecting the 500', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'bestseller');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0); // -> 1
+
+      expect(state.players.p1.roubles).toBe(1000); // reset by Disappear
+    });
+
+    it('rolling in between surrenders all tradeable property', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'bestseller');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0.4); // -> 3
+
+      expect(state.players.p1.roubles).toBe(1500); // kept the 500
+      expect(state.players.p1.ownedTileIds).toEqual([]);
+      expect(state.players.p1.inJail).toBe(false);
+    });
+
+    it('jails instead if there was no property to surrender', () => {
+      let state = createInitialGameState(PLAYERS);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'bestseller');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state, () => 0.4); // -> 3, no property owned
+
+      expect(state.players.p1.roubles).toBe(1500);
+      expect(state.players.p1.inJail).toBe(true);
+    });
+  });
+
+  it('"Telegraph Union" makes the drawer Commissar, closing stations they land on and tolling everyone else', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'telegraphUnion');
+    state = devSetForcedRoll(state, [1, 3]); // -> tile 4
+    state = rollDice(state);
+    expect(state.commissarPlayerId).toBe('p1');
+
+    // Commissar closes Komsomolskaya Station (tile 5) by landing on it.
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [2, 3]); // -> tile 5, railroad
+    state = rollDice(state);
+    expect(state.closedTileIds).toEqual([5]);
+
+    state = acknowledgeCard(state); // clears the leftover telegraphUnion cardDrawn prompt
+    state = endTurn(state); // p1 -> p2
+
+    // p2 lands there and pays the toll.
+    state = devSetForcedRoll(state, [2, 3]); // p2: 0 + 5 -> tile 5
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000 - 20);
+    expect(state.players.p1.roubles).toBe(1000 + 10); // Commissar's half of the toll
+  });
+
+  it('"Fourth International" secretly assigns Trotsky and a hiding spot, with no clue in the log', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0);
+
+    expect(state.players.p1.isTrotsky).toBe(true);
+    expect(state.players.p2.isTrotsky).toBe(false);
+    expect(state.trotskyHidingSpot).toBe(1);
+  });
+
+  it('claiming the Trotsky hiding spot Disappears the claimant either way', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0); // p1 is Trotsky, hiding spot = tile 1
+    state = acknowledgeCard(state);
+
+    state = withPosition(state, 'p1', 1);
+    state = claimTrotskyHidingSpot(state);
+
+    expect(state.players.p1.roubles).toBe(1000); // reset by Disappear
+    expect(state.trotskyHidingSpot).toBeNull();
+    expect(state.players.p1.isTrotsky).toBe(false);
+  });
+
+  it('"Siege of Stalingrad" seizes a target opponent property, locking it permanently', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'siegeOfStalingrad');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'siegeOfStalingrad' });
+
+    state = resolveCardTarget(state, { targetTileId: 6 });
+
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+    expect(state.players.p2.ownedTileIds).toEqual([]);
+    expect(state.lockedTileIds).toEqual([6]);
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'siegeOfStalingrad' });
+  });
+
+  it('a locked (seized) property is exempt from being surrendered to The Volga', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      lockedTileIds: [6],
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [28] }, // Volga
+        p2: { ...state.players.p2, ownedTileIds: [6, 1] }, // 6 locked, 1 tradeable
+      },
+    };
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 20);
+    state = devSetForcedRoll(state, [3, 5]); // -> tile 28, Volga
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([6]); // kept the locked one
+    expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 28]));
+  });
+
+  it('"Double Agent" swaps Pieces between the drawer and the chosen target', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'doubleAgent');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent' });
+
+    state = resolveCardTarget(state, { targetPlayerId: 'p2' });
+
+    expect(state.players.p1.pieceId).toBe('battleship');
+    expect(state.players.p2.pieceId).toBe('boot');
+  });
+
+  it('"Phone Call from Stalin" Disappears the player on a roll of 1', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 700, ownedTileIds: [6] } },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'phoneCallFromStalin');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0); // internal die roll -> 1
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'phoneCallFromStalin' });
+  });
+
+  it('"Phone Call from Stalin" otherwise offers a free property that traps the piece if revisited', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'phoneCallFromStalin');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state, () => 0.99); // internal die roll -> 6, not 1
+
+    expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'phoneCallFromStalin' });
+
+    state = resolveCardTarget(state, { targetTileId: 9 }); // unowned property
+    expect(state.players.p1.ownedTileIds).toEqual([9]);
+    expect(state.phoneCallTraps).toEqual([{ playerId: 'p1', tileId: 9 }]);
+
+    state = acknowledgeCard(state);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 6]); // 0 + 9 -> tile 9, landing back on the trap
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.phoneCallTraps).toEqual([]);
+  });
+});
+
+describe('held cards (hand)', () => {
+  it('Denounce Your Collaborators is held, then swaps places out of jail when used', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'denounceCollaborators');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    expect(state.players.p1.heldCardIds).toContain('denounceCollaborators');
+
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, position: 10 },
+        p2: { ...state.players.p2, position: 20 },
+      },
+    };
+    state = useDenounceCollaborators(state, 'p1', 'p2');
+
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p1.position).toBe(20);
+    expect(state.players.p2.inJail).toBe(true);
+    expect(state.players.p2.position).toBe(10);
+    expect(state.players.p1.heldCardIds).not.toContain('denounceCollaborators');
+  });
+
+  it("does nothing if the holder isn't actually in jail", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, heldCardIds: ['denounceCollaborators'] } },
+    };
+    expect(useDenounceCollaborators(state, 'p1', 'p2')).toBe(state);
+  });
+
+  it('Secret Informant jails a player sharing your square and returns to the bottom of the deck', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'secretInformant');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    expect(state.players.p1.heldCardIds).toContain('secretInformant');
+
+    state = withPosition(state, 'p1', 15);
+    state = withPosition(state, 'p2', 15);
+    state = useSecretInformant(state, 'p1', 'p2');
+
+    expect(state.players.p2.inJail).toBe(true);
+    expect(state.players.p1.heldCardIds).not.toContain('secretInformant');
+    expect(state.communistTestDrawPile[state.communistTestDrawPile.length - 1]).toBe('secretInformant');
+  });
+
+  it('Show Trial releases or Disappears a jailed target and stays in hand either way', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'showTrial');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+
+    state = {
+      ...state,
+      players: { ...state.players, p2: { ...state.players.p2, inJail: true } },
+    };
+
+    const released = useShowTrial(state, 'p1', 'p2', 'release');
+    expect(released.players.p2.inJail).toBe(false);
+    expect(released.players.p1.heldCardIds).toContain('showTrial'); // not consumed
+
+    const disappeared = useShowTrial(state, 'p1', 'p2', 'disappear');
+    expect(disappeared.players.p2.roubles).toBe(1000);
+    expect(disappeared.players.p2.inJail).toBe(false);
   });
 });

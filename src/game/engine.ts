@@ -1,4 +1,4 @@
-import { BOARD_SIZE, getTile } from '../data/board';
+import { BOARD, BOARD_SIZE, getTile } from '../data/board';
 import {
   COMMUNIST_TEST_CARDS,
   NO_CHANCE_CARDS,
@@ -26,6 +26,8 @@ const KREMLIN_TILE_ID = 37;
 const NKVD_TILE_ID = 39;
 const KREMLIN_BONUS = 200;
 const CHERNOBYL_COUNTDOWN_TURNS = 3;
+const TELEGRAPH_UNION_TOLL = 20; // split 10 to the Commissar, 10 to the State
+const PROPERTY_TILE_IDS = BOARD.filter((t) => t.kind === 'property').map((t) => t.id);
 
 /** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned, and both card decks get shuffled. */
 export function createInitialGameState(
@@ -42,10 +44,13 @@ export function createInitialGameState(
       inJail: false,
       kremlinVisits: 0,
       nkvdVisits: 0,
-      skipNextTurn: false,
+      turnsToSkip: 0,
       extraTurns: 0,
       movingBackward: false,
       blacklisted: false,
+      hidingPosition: null,
+      heldCardIds: [],
+      isTrotsky: false,
     };
   }
 
@@ -60,11 +65,16 @@ export function createInitialGameState(
     forcedRoll: null,
     chernobylCountdown: null,
     destroyedTileIds: [],
+    lockedTileIds: [],
     communistTestDrawPile: shuffle(COMMUNIST_TEST_CARDS.map((c) => c.id), rng),
     communistTestDiscardPile: [],
     noChanceDrawPile: shuffle(NO_CHANCE_CARDS.map((c) => c.id), rng),
     noChanceDiscardPile: [],
     forcedCardId: null,
+    commissarPlayerId: null,
+    closedTileIds: [],
+    phoneCallTraps: [],
+    trotskyHidingSpot: null,
     log: ['The game begins.'],
   };
 }
@@ -72,6 +82,10 @@ export function createInitialGameState(
 function rollTwoDice(rng: () => number): [number, number] {
   const rollOne = () => Math.floor(rng() * 6) + 1;
   return [rollOne(), rollOne()];
+}
+
+function rollOneDie(rng: () => number): number {
+  return Math.floor(rng() * 6) + 1;
 }
 
 function shuffle<T>(items: T[], rng: () => number): T[] {
@@ -98,6 +112,15 @@ function railroadsOwnedBy(state: GameState, playerId: string): number {
   return state.players[playerId].ownedTileIds.filter(
     (tileId) => getTile(tileId).kind === 'railroad',
   ).length;
+}
+
+/** Chernobyl Power (a forced burden, not a real asset) and anything seized by Siege of Stalingrad (locked to its owner) are exempt from every mechanic that moves properties around - Volga, hot potatoes, Collectivization Drive, the Great Purge, all of it. */
+function isTradeable(state: GameState, tileId: number): boolean {
+  return tileId !== CHERNOBYL_TILE_ID && !state.lockedTileIds.includes(tileId);
+}
+
+function tradeableTileIds(state: GameState, tileIds: number[]): number[] {
+  return tileIds.filter((id) => isTradeable(state, id));
 }
 
 function giveRoubles(
@@ -154,7 +177,7 @@ function disappearStub(
   reason: string,
 ): GameState {
   const player = state.players[playerId];
-  const next: GameState = {
+  let next: GameState = {
     ...state,
     players: {
       ...state.players,
@@ -164,9 +187,17 @@ function disappearStub(
         roubles: STARTING_ROUBLES,
         ownedTileIds: [],
         inJail: false,
+        turnsToSkip: 0,
+        blacklisted: false,
+        hidingPosition: null,
+        heldCardIds: [],
+        isTrotsky: false,
       },
     },
   };
+  if (next.commissarPlayerId === playerId) {
+    next = { ...next, commissarPlayerId: null, closedTileIds: [] };
+  }
   return logEvent(
     next,
     `Disappeared (${reason}). [placeholder reset - full respawn not yet implemented]`,
@@ -248,14 +279,9 @@ function resolveChernobylLanding(state: GameState, playerId: string): GameState 
  * owning nothing at all means there's nothing to "distribute," so you
  * just claim it.
  */
-/** Chernobyl Power is a forced burden, not a real asset - it should never move via The Volga's give-everything-away mechanics, whichever direction they run. */
-function tradeableTileIds(tileIds: number[]): number[] {
-  return tileIds.filter((id) => id !== CHERNOBYL_TILE_ID);
-}
-
 function resolveVolgaLanding(state: GameState, playerId: string): GameState {
   const ownerId = findOwner(state, VOLGA_TILE_ID);
-  const landerProperties = tradeableTileIds(state.players[playerId].ownedTileIds);
+  const landerProperties = tradeableTileIds(state, state.players[playerId].ownedTileIds);
 
   if (ownerId === playerId) return state; // landing on your own Volga
 
@@ -320,7 +346,7 @@ function resolveNkvdLanding(state: GameState, playerId: string): GameState {
       ...next,
       players: {
         ...next.players,
-        [playerId]: { ...next.players[playerId], skipNextTurn: true },
+        [playerId]: { ...next.players[playerId], turnsToSkip: 1 },
       },
     };
     return logEvent(
@@ -334,31 +360,13 @@ function resolveNkvdLanding(state: GameState, playerId: string): GameState {
   return disappearStub(next, playerId, 'disappeared at NKVD HQ after repeated visits');
 }
 
-/**
- * Draws the top card from a deck, moving it into that deck's discard
- * pile. Reshuffles the discard pile back into the draw pile first if the
- * draw pile has run dry.
- */
-function drawCard(
-  state: GameState,
-  deck: CardDeck,
-  rng: () => number,
-): { state: GameState; cardId: string } {
-  const drawKey = deck === 'communistTest' ? 'communistTestDrawPile' : 'noChanceDrawPile';
-  const discardKey =
-    deck === 'communistTest' ? 'communistTestDiscardPile' : 'noChanceDiscardPile';
+// --- Card effect helpers -------------------------------------------------
 
-  let drawPile = state[drawKey];
-  let discardPile = state[discardKey];
-  if (drawPile.length === 0) {
-    drawPile = shuffle(discardPile, rng);
-    discardPile = [];
-  }
-
-  const [cardId, ...remaining] = drawPile;
+function addToHand(state: GameState, playerId: string, cardId: string): GameState {
+  const player = state.players[playerId];
   return {
-    state: { ...state, [drawKey]: remaining, [discardKey]: [...discardPile, cardId] },
-    cardId,
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, heldCardIds: [...player.heldCardIds, cardId] } },
   };
 }
 
@@ -419,32 +427,172 @@ function nomenklaturaEffect(
   });
 }
 
-// Effects for the cards that can be automated cleanly. Any card ID not
-// listed here (negotiation, secret roles, voting, a trivia quiz with no
-// question bank, rock-paper-scissors, etc.) has no automatic effect -
-// its full text still gets shown to the table, and players resolve it
-// themselves, same as a physical card.
+/** Go Into Hiding: miss 3 turns, and mark the current tile as a hiding spot - another player landing there exactly Disappears this player early (see the check in moveAndResolve). */
+function goIntoHidingEffect(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, turnsToSkip: 3, hidingPosition: player.position } },
+  };
+}
+
+/**
+ * NKVD (the card, distinct from the NKVD HQ tile): "quizzed on doctrine,
+ * wrong answers send you to jail." There's no real question bank to quiz
+ * players from, so this is automated as a simple coin-flip-style die
+ * roll standing in for "did you answer correctly."
+ */
+function nkvdQuizEffect(state: GameState, playerId: string, rng: () => number): GameState {
+  const roll = rollOneDie(rng);
+  if (roll <= 3) {
+    return logEvent(sendToJail(state, playerId), `Answered the doctrine question wrong (rolled ${roll}) - sent to jail.`);
+  }
+  return logEvent(state, `Answered the doctrine question correctly (rolled ${roll}).`);
+}
+
+/**
+ * Collectivization Drive: redistributes all money and tradeable property
+ * evenly. The card's own text acknowledges an even split isn't always
+ * possible ("if they cannot be divided equally, you agree who gets the
+ * excess... failure to agree lands everyone in jail") - we can't run a
+ * real negotiation, so any leftover roubles go to the drawer and
+ * properties are dealt out round-robin, standing in for "everyone agreed."
+ */
+function collectivizationDriveEffect(state: GameState, playerId: string, rng: () => number): GameState {
+  const playerIds = state.turnOrder;
+  const totalRoubles = playerIds.reduce((sum, id) => sum + state.players[id].roubles, 0);
+  const share = Math.floor(totalRoubles / playerIds.length);
+  const remainder = totalRoubles - share * playerIds.length;
+
+  let next = state;
+  for (const id of playerIds) {
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [id]: { ...next.players[id], roubles: share + (id === playerId ? remainder : 0) },
+      },
+    };
+  }
+
+  const pooledTiles = playerIds.flatMap((id) =>
+    next.players[id].ownedTileIds.filter((t) => isTradeable(next, t)),
+  );
+  for (const id of playerIds) {
+    const kept = next.players[id].ownedTileIds.filter((t) => !isTradeable(next, t));
+    next = { ...next, players: { ...next.players, [id]: { ...next.players[id], ownedTileIds: kept } } };
+  }
+  shuffle(pooledTiles, rng).forEach((tileId, index) => {
+    next = giveTileTo(next, tileId, playerIds[index % playerIds.length]);
+  });
+
+  return logEvent(next, 'Collectivization Drive: money and property redistributed evenly among everyone.');
+}
+
+/**
+ * The Great Purge: everyone loses half their tradeable properties
+ * (rounded up, chosen randomly - there's no buildings system yet, so
+ * "loses all buildings" has nothing to apply to), and one random player
+ * Disappears, standing in for the rock-paper-scissors decider (there's
+ * no way to run a real multiplayer RPS from here).
+ */
+function greatPurgeEffect(state: GameState, _playerId: string, rng: () => number): GameState {
+  let next = state;
+  for (const id of next.turnOrder) {
+    const tradeable = next.players[id].ownedTileIds.filter((t) => isTradeable(next, t));
+    const loseCount = Math.ceil(tradeable.length / 2);
+    const toLose = new Set(shuffle(tradeable, rng).slice(0, loseCount));
+    const remaining = next.players[id].ownedTileIds.filter((t) => !toLose.has(t));
+    next = { ...next, players: { ...next.players, [id]: { ...next.players[id], ownedTileIds: remaining } } };
+  }
+  next = logEvent(next, 'The Great Purge: everyone loses half their tradeable properties.');
+
+  const loserId = next.turnOrder[Math.floor(rng() * next.turnOrder.length)];
+  return disappearStub(next, loserId, 'lost the Great Purge (randomly chosen in place of rock-paper-scissors)');
+}
+
+/**
+ * Bestseller!: the card offers two alternative resolutions ("go to
+ * prison until you roll a 6... OR roll one die..."). We only automate
+ * the second, simpler branch - the first would need a whole separate
+ * jail-like sub-state machine for an already-optional path.
+ */
+function bestsellerEffect(state: GameState, playerId: string, rng: () => number): GameState {
+  let next = giveRoubles(state, playerId, 500);
+  const roll = rollOneDie(rng);
+
+  if (roll === 6) {
+    return logEvent(next, `Rolled a ${roll} - burned the evidence and denied everything. Kept the 500 roubles.`);
+  }
+  if (roll === 1) {
+    return disappearStub(next, playerId, 'rolled a 1 trying to cover up the bestseller');
+  }
+
+  const tradeable = next.players[playerId].ownedTileIds.filter((t) => isTradeable(next, t));
+  if (tradeable.length === 0) {
+    return logEvent(sendToJail(next, playerId), `Rolled a ${roll} with no property to surrender - sent to jail instead.`);
+  }
+  const remaining = next.players[playerId].ownedTileIds.filter((t) => !tradeable.includes(t));
+  next = { ...next, players: { ...next.players, [playerId]: { ...next.players[playerId], ownedTileIds: remaining } } };
+  return logEvent(next, `Rolled a ${roll} - kept the 500 roubles but surrendered all property.`);
+}
+
+/**
+ * Fourth International: secretly picks one player to be Trotsky and one
+ * property tile as "the hiding place" (standing in for a human Stalin
+ * choosing it). No log line reveals either - see the NOTE on
+ * GamePlayerState.isTrotsky for why this is only a "soft" secret.
+ */
+function fourthInternationalEffect(state: GameState, _playerId: string, rng: () => number): GameState {
+  const trotskyId = state.turnOrder[Math.floor(rng() * state.turnOrder.length)];
+  const players = { ...state.players };
+  for (const id of state.turnOrder) {
+    players[id] = { ...players[id], isTrotsky: id === trotskyId };
+  }
+  const trotskyHidingSpot = PROPERTY_TILE_IDS[Math.floor(rng() * PROPERTY_TILE_IDS.length)];
+  return { ...state, players, trotskyHidingSpot };
+}
+
+// Cards that need the player to pick a target (an opponent, a property,
+// or both) before they can be resolved - see resolveCardTarget.
+const CARDS_NEEDING_TARGET = new Set(['siegeOfStalingrad', 'doubleAgent']);
+
+// Effects for the cards that can be automated. Any card ID not listed
+// here has no automatic effect - its full text still gets shown to the
+// table, and players resolve it themselves, same as a physical card.
 const CARD_EFFECTS: Record<
   string,
   (state: GameState, playerId: string, rng: () => number) => GameState
 > = {
   bankError: (state, playerId) => giveRoubles(state, playerId, 1000),
   accident: (state, playerId) => disappearStub(state, playerId, 'an "accident"'),
-  antiRevisionist: (state, playerId) => ({
-    ...state,
-    players: {
-      ...state.players,
-      [playerId]: { ...state.players[playerId], skipNextTurn: true },
-    },
-  }),
+  antiRevisionist: (state, playerId) => {
+    const player = state.players[playerId];
+    return { ...state, players: { ...state.players, [playerId]: { ...player, turnsToSkip: 1 } } };
+  },
   partyVanguard: (state, playerId) => setExtraTurns(state, playerId, 2),
   counterRevolutionary: (state, playerId) => toggleDirection(state, playerId),
   culturalRevolution: (state) => toggleDirectionForAll(state),
   blacklist: (state, playerId) => setBlacklisted(state, playerId),
   nomenklatura: (state, playerId, rng) => nomenklaturaEffect(state, playerId, rng),
+  goIntoHiding: (state, playerId) => goIntoHidingEffect(state, playerId),
+  nkvd: (state, playerId, rng) => nkvdQuizEffect(state, playerId, rng),
+  collectivizationDrive: (state, playerId, rng) => collectivizationDriveEffect(state, playerId, rng),
+  greatPurge: (state, playerId, rng) => greatPurgeEffect(state, playerId, rng),
+  telegraphUnion: (state, playerId) => ({ ...state, commissarPlayerId: playerId }),
+  bestseller: (state, playerId, rng) => bestsellerEffect(state, playerId, rng),
+  fourthInternational: (state, playerId, rng) => fourthInternationalEffect(state, playerId, rng),
+  denounceCollaborators: (state, playerId) => addToHand(state, playerId, 'denounceCollaborators'),
+  secretInformant: (state, playerId) => addToHand(state, playerId, 'secretInformant'),
+  showTrial: (state, playerId) => addToHand(state, playerId, 'showTrial'),
 };
 
-/** Draws a card (or uses a dev-panel forced one) and shows it to the table - see CARD_EFFECTS for which ones apply automatically. */
+/**
+ * Draws a card (or uses a dev-panel forced one) and either resolves it
+ * immediately (see CARD_EFFECTS) or, for cards needing a target, opens a
+ * cardTarget decision first. Phone Call from Stalin gets its own inline
+ * handling since its die roll decides whether targeting even happens.
+ */
 function resolveCardLanding(
   state: GameState,
   playerId: string,
@@ -464,13 +612,55 @@ function resolveCardLanding(
   }
 
   const card = findCard(cardId);
+  next = logEvent(next, `Drew "${card.title}": ${card.text}`);
+
+  if (cardId === 'phoneCallFromStalin') {
+    const roll = rollOneDie(rng);
+    if (roll === 1) {
+      next = disappearStub(next, playerId, `rolled a 1 on the Phone Call from Stalin`);
+      return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+    }
+    next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
+    return { ...next, pendingDecision: { type: 'cardTarget', cardId } };
+  }
+
+  if (CARDS_NEEDING_TARGET.has(cardId)) {
+    return { ...next, pendingDecision: { type: 'cardTarget', cardId } };
+  }
+
   const effect = CARD_EFFECTS[cardId];
   if (effect) {
     next = effect(next, playerId, rng);
   }
-
-  next = logEvent(next, `Drew "${card.title}": ${card.text}`);
   return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+}
+
+/**
+ * Draws the top card from a deck, moving it into that deck's discard
+ * pile. Reshuffles the discard pile back into the draw pile first if the
+ * draw pile has run dry.
+ */
+function drawCard(
+  state: GameState,
+  deck: CardDeck,
+  rng: () => number,
+): { state: GameState; cardId: string } {
+  const drawKey = deck === 'communistTest' ? 'communistTestDrawPile' : 'noChanceDrawPile';
+  const discardKey =
+    deck === 'communistTest' ? 'communistTestDiscardPile' : 'noChanceDiscardPile';
+
+  let drawPile = state[drawKey];
+  let discardPile = state[discardKey];
+  if (drawPile.length === 0) {
+    drawPile = shuffle(discardPile, rng);
+    discardPile = [];
+  }
+
+  const [cardId, ...remaining] = drawPile;
+  return {
+    state: { ...state, [drawKey]: remaining, [discardKey]: [...discardPile, cardId] },
+    cardId,
+  };
 }
 
 function resolveLanding(
@@ -480,6 +670,30 @@ function resolveLanding(
   rng: () => number,
 ): GameState {
   const tile = getTile(position);
+
+  // Telegraph Union: a closed railroad/utility charges anyone but the
+  // Commissar a toll instead of its normal effect; the Commissar closes
+  // an unclosed one just by landing on it, instead of its normal effect.
+  if (state.closedTileIds.includes(position) && playerId !== state.commissarPlayerId) {
+    let next = payRoubles(state, playerId, TELEGRAPH_UNION_TOLL);
+    if (state.commissarPlayerId) {
+      next = giveRoubles(next, state.commissarPlayerId, TELEGRAPH_UNION_TOLL / 2);
+    }
+    return logEvent(
+      next,
+      `Paid a ${TELEGRAPH_UNION_TOLL} rouble toll on ${tile.name} (half to the Commissar, half to the State).`,
+    );
+  }
+  if (
+    (tile.kind === 'railroad' || tile.kind === 'utility') &&
+    playerId === state.commissarPlayerId &&
+    !state.closedTileIds.includes(position)
+  ) {
+    return logEvent(
+      { ...state, closedTileIds: [...state.closedTileIds, position] },
+      `Closed ${tile.name} as Commissar for Public Works.`,
+    );
+  }
 
   switch (tile.kind) {
     case 'property':
@@ -603,6 +817,22 @@ function moveAndResolve(
       players: { ...next.players, [playerId]: { ...next.players[playerId], blacklisted: false } },
     };
     next = logEvent(next, 'No longer blacklisted - you can buy and collect rent again.');
+  }
+
+  // Go Into Hiding: landing exactly on someone else's hiding spot finds
+  // them out - they Disappear early.
+  for (const [otherId, otherPlayer] of Object.entries(next.players)) {
+    if (otherId !== playerId && otherPlayer.hidingPosition === newPosition) {
+      next = disappearStub(next, otherId, 'found while hiding');
+    }
+  }
+
+  // Phone Call from Stalin: landing back on a property this player was
+  // given for free Disappears them, before any other landing effect.
+  const trap = next.phoneCallTraps.find((t) => t.tileId === newPosition && t.playerId === playerId);
+  if (trap) {
+    next = { ...next, phoneCallTraps: next.phoneCallTraps.filter((t) => t !== trap) };
+    return disappearStub(next, playerId, 'landed back on a Phone Call from Stalin property');
   }
 
   return resolveLanding(next, playerId, newPosition, rng);
@@ -730,7 +960,7 @@ export function acceptVolgaOffer(state: GameState): GameState {
   if (state.pendingDecision?.type !== 'volgaOffer') return state;
 
   const otherPlayers = state.turnOrder.filter((id) => id !== playerId);
-  const propertiesToGive = tradeableTileIds(state.players[playerId].ownedTileIds);
+  const propertiesToGive = tradeableTileIds(state, state.players[playerId].ownedTileIds);
 
   let next = state;
   propertiesToGive.forEach((tileId, index) => {
@@ -755,6 +985,156 @@ export function declineVolgaOffer(state: GameState): GameState {
 }
 
 /**
+ * Resolves a card that needed a target: Siege of Stalingrad (an
+ * opponent's property to seize permanently), Double Agent (a player to
+ * swap Pieces with), or Phone Call from Stalin (any property to claim
+ * for free, which then traps that piece - see moveAndResolve).
+ */
+export function resolveCardTarget(
+  state: GameState,
+  selection: { targetPlayerId?: string; targetTileId?: number },
+): GameState {
+  if (state.pendingDecision?.type !== 'cardTarget') return state;
+  const playerId = currentPlayerId(state);
+  const { cardId } = state.pendingDecision;
+  let next = state;
+
+  if (cardId === 'siegeOfStalingrad' && selection.targetTileId !== undefined) {
+    const tileId = selection.targetTileId;
+    const ownerId = findOwner(state, tileId);
+    if (ownerId && ownerId !== playerId && isTradeable(state, tileId)) {
+      next = transferTileOwnership(state, tileId, ownerId, playerId);
+      next = { ...next, lockedTileIds: [...next.lockedTileIds, tileId] };
+      next = logEvent(next, `Seized ${getTile(tileId).name} permanently.`);
+    }
+  } else if (cardId === 'doubleAgent' && selection.targetPlayerId) {
+    const targetId = selection.targetPlayerId;
+    if (targetId !== playerId && state.players[targetId]) {
+      const a = state.players[playerId];
+      const b = state.players[targetId];
+      next = {
+        ...state,
+        players: {
+          ...state.players,
+          [playerId]: { ...a, pieceId: b.pieceId },
+          [targetId]: { ...b, pieceId: a.pieceId },
+        },
+      };
+      next = logEvent(next, 'Swapped Pieces with another player.');
+    }
+  } else if (cardId === 'phoneCallFromStalin' && selection.targetTileId !== undefined) {
+    const tileId = selection.targetTileId;
+    const ownerId = findOwner(state, tileId);
+    next = ownerId
+      ? transferTileOwnership(state, tileId, ownerId, playerId)
+      : giveTileTo(state, tileId, playerId);
+    next = { ...next, phoneCallTraps: [...next.phoneCallTraps, { playerId, tileId }] };
+    next = logEvent(next, `Claimed ${getTile(tileId).name} for free - but landing there again means Disappearing.`);
+  }
+
+  return { ...next, pendingDecision: { type: 'cardDrawn', cardId } };
+}
+
+/** Uses a held Denounce Your Collaborators card: only while in jail, swaps places with the chosen player (who goes to jail instead). Consumes the card. */
+export function useDenounceCollaborators(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+): GameState {
+  const player = state.players[playerId];
+  const target = state.players[targetPlayerId];
+  if (!player.heldCardIds.includes('denounceCollaborators')) return state;
+  if (!player.inJail || !target || targetPlayerId === playerId) return state;
+
+  const next: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: {
+        ...player,
+        inJail: false,
+        position: target.position,
+        heldCardIds: player.heldCardIds.filter((id) => id !== 'denounceCollaborators'),
+      },
+      [targetPlayerId]: { ...target, inJail: true, position: JAIL_POSITION },
+    },
+  };
+  return logEvent(next, 'Used Denounce Your Collaborators to swap places out of jail.');
+}
+
+/** Uses a held Secret Informant card: only when standing on the same tile as the target, sends them to jail. Consumes the card, returning it to the bottom of the Communist Test deck per its own text. */
+export function useSecretInformant(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+): GameState {
+  const player = state.players[playerId];
+  const target = state.players[targetPlayerId];
+  if (!player.heldCardIds.includes('secretInformant')) return state;
+  if (!target || targetPlayerId === playerId || target.position !== player.position) return state;
+
+  let next: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...player, heldCardIds: player.heldCardIds.filter((id) => id !== 'secretInformant') },
+    },
+  };
+  next = sendToJail(next, targetPlayerId);
+  next = { ...next, communistTestDrawPile: [...next.communistTestDrawPile, 'secretInformant'] };
+  return logEvent(next, 'Used Secret Informant to send someone to jail.');
+}
+
+/** Uses a held Show Trial card: only on a jailed target, either releases or Disappears them. The card itself isn't consumed - "at any point" implies it's reusable. */
+export function useShowTrial(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+  verdict: 'release' | 'disappear',
+): GameState {
+  const player = state.players[playerId];
+  const target = state.players[targetPlayerId];
+  if (!player.heldCardIds.includes('showTrial')) return state;
+  if (!target || !target.inJail) return state;
+
+  if (verdict === 'disappear') {
+    return disappearStub(state, targetPlayerId, 'Disappeared by a Show Trial');
+  }
+  return logEvent(
+    { ...state, players: { ...state.players, [targetPlayerId]: { ...target, inJail: false } } },
+    'Released from jail by a Show Trial.',
+  );
+}
+
+/**
+ * Claims to have found Trotsky's hiding place (Fourth International).
+ * Only works if the current player is standing exactly on the secret
+ * spot. Per the source card text, BOTH outcomes Disappear the claimant
+ * - "If they are not Trotsky, they Disappear. If they are Trotsky, they
+ * Disappear." Implemented literally even though that reads oddly
+ * (possibly a typo in the original); we have no grounds to invent a
+ * different resolution.
+ */
+export function claimTrotskyHidingSpot(state: GameState): GameState {
+  const playerId = currentPlayerId(state);
+  const player = state.players[playerId];
+  if (state.trotskyHidingSpot === null || player.position !== state.trotskyHidingSpot) {
+    return state;
+  }
+
+  const wasTrotsky = player.isTrotsky;
+  let next: GameState = { ...state, trotskyHidingSpot: null };
+  for (const id of next.turnOrder) {
+    next = { ...next, players: { ...next.players, [id]: { ...next.players[id], isTrotsky: false } } };
+  }
+  return disappearStub(
+    next,
+    playerId,
+    wasTrotsky ? 'was Trotsky and got caught' : 'falsely claimed to have found Trotsky',
+  );
+}
+
+/**
  * Ends the current player's turn - unless they rolled doubles, in which
  * case they go again instead of passing the turn ("if you get a double,
  * you get to roll again"). Refuses to do anything while a purchase
@@ -765,8 +1145,8 @@ export function declineVolgaOffer(state: GameState): GameState {
  * the mandatory 100 rouble bribe (or Disappears them if they can't
  * afford it) - "you must bribe the guards... at the end of your turn or
  * you will disappear." It also ticks the Chernobyl Power countdown once
- * (see tickChernobyl) and skips over any player whose next turn was
- * cancelled by NKVD HQ (see advanceTurn).
+ * (see tickChernobyl) and skips over any player whose next turn(s) were
+ * cancelled (see advanceTurn).
  */
 export function endTurn(state: GameState): GameState {
   if (state.pendingDecision) return state;
@@ -867,10 +1247,10 @@ function explodeChernobyl(state: GameState, ownerId: string): GameState {
 }
 
 /**
- * Moves currentTurnIndex to the next player, skipping (and clearing the
- * flag on) anyone whose turn was cancelled by NKVD HQ. Bounded to one
- * lap of the table so it can't loop forever in the freak case where
- * every remaining player is somehow flagged at once.
+ * Moves currentTurnIndex to the next player, skipping over (and
+ * decrementing turnsToSkip on) anyone still sitting out a penalty.
+ * Bounded to one lap of the table so it can't loop forever in the freak
+ * case where every remaining player is somehow flagged at once.
  */
 function advanceTurn(state: GameState): GameState {
   let next = state;
@@ -881,16 +1261,22 @@ function advanceTurn(state: GameState): GameState {
     const candidateId = next.turnOrder[index];
     const candidate = next.players[candidateId];
 
-    if (candidate.skipNextTurn) {
+    if (candidate.turnsToSkip > 0) {
+      const turnsToSkip = candidate.turnsToSkip - 1;
       next = logEvent(
         {
           ...next,
           players: {
             ...next.players,
-            [candidateId]: { ...candidate, skipNextTurn: false },
+            [candidateId]: {
+              ...candidate,
+              turnsToSkip,
+              // Their hiding period ends along with the skip - "out of hiding."
+              hidingPosition: turnsToSkip === 0 ? null : candidate.hidingPosition,
+            },
           },
         },
-        'A turn was skipped (NKVD questioning).',
+        'A turn was skipped.',
       );
       continue;
     }

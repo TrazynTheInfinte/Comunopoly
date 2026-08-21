@@ -105,25 +105,40 @@ export interface GamePlayerState {
   kremlinVisits: number;
   /** Times this player has landed on NKVD HQ - cycles miss-a-turn / jail / Disappear every 3 visits. */
   nkvdVisits: number;
-  /** Set by NKVD HQ's first-visit penalty; consumed (and cleared) the next time the turn would reach this player. */
-  skipNextTurn: boolean;
+  /** Turns still left to sit out before this player's turn comes up again (NKVD HQ's 1st-visit penalty, Anti-Revisionist, Go Into Hiding's three-turn version). Decremented, and cleared at 0, whenever advanceTurn walks past this player. */
+  turnsToSkip: number;
   /** Extra turns still owed to this player before the turn actually passes to the next player (e.g. from Party Vanguard). */
   extraTurns: number;
   /** True if this player currently moves backward around the board (Counter-Revolutionary!, Cultural Revolution). */
   movingBackward: boolean;
   /** Set by Blacklist - can't buy properties or collect rent until clearing, which happens the next time this player passes or lands on STOY. */
   blacklisted: boolean;
+  /** Set by Go Into Hiding: the tile this player was on when they went into hiding. Another player landing exactly there Disappears this player early. Cleared once turnsToSkip runs out or they Disappear. */
+  hidingPosition: number | null;
+  /** Cards drawn that get held for later voluntary use (Denounce Your Collaborators, Secret Informant, Show Trial) rather than resolving immediately. */
+  heldCardIds: string[];
+  /**
+   * Set by Fourth International - secretly marks this player as Trotsky.
+   * NOTE: this is only a "soft" secret. Every client has the full game
+   * state (see docs/adr/0001-client-authoritative-sync.md), so this
+   * flag is never shown in the UI to anyone but is technically visible
+   * to a player who inspects the raw data - there's no way to keep it
+   * truly hidden without a validating server.
+   */
+  isTrotsky: boolean;
 }
 
 /**
  * A decision the current player must make before their turn can end:
  * buy the property they just landed on, give away everything to claim
- * an unowned Volga, or acknowledge a drawn Communist Test/No Chance
- * card before play continues.
+ * an unowned Volga, pick a target for a card that needs one (Siege of
+ * Stalingrad, Double Agent, Phone Call from Stalin), or acknowledge a
+ * drawn Communist Test/No Chance card before play continues.
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
   | { type: 'volgaOffer'; tileId: number }
+  | { type: 'cardTarget'; cardId: string }
   | { type: 'cardDrawn'; cardId: string };
 
 export interface GameState {
@@ -142,6 +157,8 @@ export interface GameState {
   chernobylCountdown: number | null;
   /** Tile IDs destroyed by a Chernobyl explosion - permanently unownable for the rest of the game. */
   destroyedTileIds: number[];
+  /** Tile IDs seized by Siege of Stalingrad - locked to their new owner, exempt from every other ownership-transferring mechanic (Volga, hot potatoes, etc.) until that owner Disappears. */
+  lockedTileIds: number[];
   /** Card IDs remaining to be drawn, and already-drawn IDs to reshuffle in once a pile runs out. */
   communistTestDrawPile: string[];
   communistTestDiscardPile: string[];
@@ -149,6 +166,13 @@ export interface GameState {
   noChanceDiscardPile: string[];
   /** Dev-panel override: if set, the next card-tile landing draws this specific card instead of the pile's next one, without disturbing either pile. */
   forcedCardId: string | null;
+  /** Telegraph Union: the player currently acting as Commissar for Public Works, and which railroad/utility tiles they've closed. Cleared if the Commissar Disappears. */
+  commissarPlayerId: string | null;
+  closedTileIds: number[];
+  /** Phone Call from Stalin: properties a player was given for free that Disappear them if they ever land back on it. */
+  phoneCallTraps: { playerId: string; tileId: number }[];
+  /** Fourth International: the board position "Stalin" secretly chose as Trotsky's hiding place - null when no Fourth International is currently active. */
+  trotskyHidingSpot: number | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }
