@@ -16,6 +16,8 @@ import {
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
+  devForceDisappear,
+  devForceEndgame,
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
@@ -240,6 +242,14 @@ export async function chooseEndgameTargetAndSync(
   targetPlayerId: string,
 ) {
   await writeGameState(roomCode, chooseEndgameTarget(game, playerId, targetPlayerId));
+}
+
+export async function devForceDisappearAndSync(roomCode: string, game: GameState, playerId: string) {
+  await writeGameState(roomCode, devForceDisappear(game, playerId));
+}
+
+export async function devForceEndgameAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, devForceEndgame(game));
 }
 
 export async function devDrawCardAndSync(

@@ -3,6 +3,8 @@ import { BOARD } from '../data/board';
 import { ALL_CARDS, findCard } from '../data/cards';
 import {
   devDrawCardAndSync,
+  devForceDisappearAndSync,
+  devForceEndgameAndSync,
   devJumpToTileAndSync,
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
@@ -145,6 +147,42 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           </button>
         </div>
         <p className="hint">Uses the forced card above if one's set, otherwise a real draw.</p>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Force Disappear</p>
+        {game.turnOrder.map((id) => (
+          <div key={id} className="dev-panel-row">
+            <label>
+              {room.players[id]?.name}
+              {game.players[id].isSpectating ? ' (spectating)' : ''}
+            </label>
+            <button
+              onClick={() => devForceDisappearAndSync(roomCode, game, id)}
+              disabled={game.players[id].isSpectating}
+            >
+              Disappear
+            </button>
+          </div>
+        ))}
+        <p className="hint">
+          Runs the real thing - retires their current Piece, Seizes everything, then either queues
+          a replacement pick or (once the Pool's empty) spectates them.
+        </p>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Force Endgame</p>
+        <div className="dev-panel-row">
+          <button onClick={() => devForceEndgameAndSync(roomCode, game)} disabled={!!game.endgame}>
+            Empty the Piece Pool now
+          </button>
+        </div>
+        <p className="hint">
+          {game.endgame
+            ? 'Already triggered - everyone still gets their one final turn before Scores are computed.'
+            : "Retires every Piece nobody's currently holding, as if the Pool just ran dry. Everyone active still gets one final turn as normal."}
+        </p>
       </div>
     </section>
   );

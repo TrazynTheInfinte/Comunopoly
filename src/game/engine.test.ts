@@ -14,6 +14,8 @@ import {
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
+  devForceDisappear,
+  devForceEndgame,
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
@@ -2848,5 +2850,46 @@ describe('Endgame Win Condition scoring', () => {
     expect(state.endgame?.results?.p2).toBeUndefined();
     expect(state.endgame?.results?.p1).toBe(0);
     expect(state.endgame?.results?.p3).toBe(0);
+  });
+});
+
+describe('Dev Panel: force Disappear / force Endgame', () => {
+  it('devForceDisappear runs the real Disappear on demand for any player', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 5, ownedTileIds: [6] } } };
+
+    state = devForceDisappear(state, 'p1');
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.retiredPieceIds).toContain('boot');
+    expect(state.pendingPieceChoices).toContain('p1');
+  });
+
+  it('devForceDisappear is a no-op for an unknown player', () => {
+    const state = createInitialGameState(PLAYERS);
+    expect(devForceDisappear(state, 'not-a-real-player')).toBe(state);
+  });
+
+  it('devForceEndgame retires every unheld Piece and starts the final lap immediately', () => {
+    let state = createInitialGameState(PLAYERS); // p1 boot, p2 battleship
+
+    state = devForceEndgame(state);
+
+    expect(state.retiredPieceIds).toHaveLength(10); // everything except boot/battleship
+    expect(state.retiredPieceIds).not.toContain('boot');
+    expect(state.retiredPieceIds).not.toContain('battleship');
+    expect(state.endgame).not.toBeNull();
+    expect(state.endgame?.finalLapRemaining).toEqual(['p1', 'p2']);
+  });
+
+  it('devForceEndgame is a no-op once the Endgame has already started', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devForceEndgame(state);
+    const afterFirst = state;
+
+    state = devForceEndgame(state);
+
+    expect(state).toBe(afterFirst);
   });
 });

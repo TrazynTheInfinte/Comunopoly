@@ -2336,3 +2336,33 @@ export function devDrawCard(
   const playerId = currentPlayerId(state);
   return resolveCardLanding(state, playerId, deck, rng);
 }
+
+/** Disappears any player on demand, right now, for whatever reason the tester wants logged - the real thing (retires their Piece, Seizes everything, queues a replacement pick or spectating), not a fake preview of it. */
+export function devForceDisappear(
+  state: GameState,
+  playerId: string,
+  reason = 'forced by Comrade Stalin',
+): GameState {
+  if (!state.players[playerId]) return state;
+  return disappearPlayer(state, playerId, reason);
+}
+
+/**
+ * Skips straight to the Endgame for testing: retires every Piece ID
+ * nobody's currently holding, so the Pool reads as fully exhausted, then
+ * runs the same trigger a real last-Piece pick would. Everyone active
+ * still gets their one final turn same as normal - this only fast-forwards
+ * getting the Pool to run dry, not the final lap itself.
+ */
+export function devForceEndgame(state: GameState): GameState {
+  if (state.endgame) return state;
+  const heldPieceIds = new Set(
+    Object.values(state.players)
+      .filter((p) => !p.isSpectating)
+      .map((p) => p.pieceId),
+  );
+  const retiredPieceIds = ALL_PIECE_IDS.filter((id) => !heldPieceIds.has(id));
+  return checkEndgameTrigger(
+    logEvent({ ...state, retiredPieceIds }, 'Comrade Stalin forced the Endgame to begin.'),
+  );
+}
