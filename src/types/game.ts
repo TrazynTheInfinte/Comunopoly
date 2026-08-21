@@ -222,6 +222,8 @@ export interface GameState {
   hotelsRemaining: number;
   /** Color groups Hat has already been granted a free house for (Hat's Special Power) - prevents re-granting every time ownership of an already-rewarded group churns. Cleared for a group if Hat later loses that group (e.g. Disappearing), so completing it again re-triggers the reward. */
   hatFreeHouseGroups: ColorGroup[];
+  /** Tile IDs (properties/railroads only - our utilities have no price to mortgage against) currently mortgaged: the owner already collected half its price and can't collect rent on it until they pay the mortgage off. Keyed by tile ID like propertyHouses, so it travels with the tile through forced-transfer mechanics. */
+  mortgagedTileIds: number[];
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }

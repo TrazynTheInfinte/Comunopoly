@@ -19,12 +19,14 @@ import {
   devSetForcedRoll,
   devSetRoubles,
   endTurn,
+  mortgageProperty,
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   rollDice,
   sellHouse,
   skipPurchase,
+  unmortgageProperty,
   useDenounceCollaborators,
   useSecretInformant,
 } from '../game/engine';
@@ -195,6 +197,24 @@ export async function sellHouseAndSync(
   tileId: number,
 ) {
   await writeGameState(roomCode, sellHouse(game, playerId, tileId));
+}
+
+export async function mortgagePropertyAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  tileId: number,
+) {
+  await writeGameState(roomCode, mortgageProperty(game, playerId, tileId));
+}
+
+export async function unmortgagePropertyAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  tileId: number,
+) {
+  await writeGameState(roomCode, unmortgageProperty(game, playerId, tileId));
 }
 
 export async function devDrawCardAndSync(

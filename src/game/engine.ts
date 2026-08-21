@@ -30,6 +30,9 @@ const PROPERTY_TILE_IDS = BOARD.filter((t) => t.kind === 'property').map((t) => 
 // blocks further building until someone sells houses back.
 const STARTING_HOUSES = 32;
 const STARTING_HOTELS = 12;
+// Standard Monopoly mortgage rules: mortgaging pays out half the tile's
+// price; paying it back off costs that same amount plus 10% interest.
+const MORTGAGE_PAYOFF_MULTIPLIER = 1.1;
 const COLOR_GROUPS: ColorGroup[] = ['purple', 'lightBlue', 'pink', 'orange', 'red', 'yellow', 'green'];
 
 function tileIdsInGroup(group: ColorGroup): number[] {
@@ -92,6 +95,7 @@ export function createInitialGameState(
     housesRemaining: STARTING_HOUSES,
     hotelsRemaining: STARTING_HOTELS,
     hatFreeHouseGroups: [],
+    mortgagedTileIds: [],
     log: ['The game begins.'],
   };
 }
@@ -213,11 +217,16 @@ function disappearStub(
     propertyHouses = { ...propertyHouses, [tileId]: 0 };
   }
 
+  // Foreclosed properties go back to the bank clean - any mortgage on
+  // them is wiped rather than sticking around on a now-unowned tile.
+  const mortgagedTileIds = state.mortgagedTileIds.filter((id) => !player.ownedTileIds.includes(id));
+
   let next: GameState = {
     ...state,
     propertyHouses,
     housesRemaining,
     hotelsRemaining,
+    mortgagedTileIds,
     // Hat's piece stays with this player through Disappear (see the
     // placeholder note above), so any groups already rewarded no longer
     // apply - they've lost every property. Clearing this lets completing
@@ -987,6 +996,9 @@ function resolveLanding(
       if (ownerId === playerId) {
         return state; // already yours, nothing happens
       }
+      if (state.mortgagedTileIds.includes(tile.id)) {
+        return logEvent(state, `${tile.name} is mortgaged - no rent owed.`);
+      }
 
       const rent =
         tile.kind === 'railroad'
@@ -1503,6 +1515,7 @@ export function buildHouse(state: GameState, playerId: string, tileId: number): 
   const player = state.players[playerId];
   if (!player.ownedTileIds.includes(tileId)) return state;
   if (!ownsFullGroup(state, playerId, tile.colorGroup)) return state;
+  if (state.mortgagedTileIds.includes(tileId)) return state;
 
   const current = state.propertyHouses[tileId] ?? 0;
   if (current >= 5) return state; // already a hotel
@@ -1562,6 +1575,58 @@ export function sellHouse(state: GameState, playerId: string, tileId: number): G
     housesRemaining: state.housesRemaining + 1,
   };
   return logEvent(next, `Sold a house on ${tile.name} back to the bank for ${refund} roubles.`);
+}
+
+/**
+ * Mortgages a property or railroad: the owner collects half its price
+ * from the bank, and stops collecting rent on it until they pay the
+ * mortgage off. Standard Monopoly rule: blocked while there are still
+ * houses anywhere in that property's color group (sell them all first).
+ * Utilities aren't mortgageable here - Chernobyl Power/The Volga have no
+ * price, being forced-ownership special tiles with their own rules.
+ */
+export function mortgageProperty(state: GameState, playerId: string, tileId: number): GameState {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property' && tile.kind !== 'railroad') return state;
+  const player = state.players[playerId];
+  if (!player.ownedTileIds.includes(tileId)) return state;
+  if (state.mortgagedTileIds.includes(tileId)) return state;
+
+  if (tile.kind === 'property') {
+    const groupHasHouses = tileIdsInGroup(tile.colorGroup).some(
+      (id) => (state.propertyHouses[id] ?? 0) > 0,
+    );
+    if (groupHasHouses) {
+      return logEvent(state, `Can't mortgage ${tile.name} - sell all houses in the collection first.`);
+    }
+  }
+
+  const mortgageValue = Math.floor(tile.price / 2);
+  const next: GameState = {
+    ...giveRoubles(state, playerId, mortgageValue),
+    mortgagedTileIds: [...state.mortgagedTileIds, tileId],
+  };
+  return logEvent(next, `Mortgaged ${tile.name} for ${mortgageValue} roubles.`);
+}
+
+/** Pays off a mortgaged property or railroad: the mortgage value plus 10% interest, standard Monopoly rule. Rent can be collected on it again afterward. */
+export function unmortgageProperty(state: GameState, playerId: string, tileId: number): GameState {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property' && tile.kind !== 'railroad') return state;
+  const player = state.players[playerId];
+  if (!player.ownedTileIds.includes(tileId)) return state;
+  if (!state.mortgagedTileIds.includes(tileId)) return state;
+
+  const payoff = Math.round((tile.price / 2) * MORTGAGE_PAYOFF_MULTIPLIER);
+  if (player.roubles < payoff) {
+    return logEvent(state, `Not enough roubles to pay off the mortgage on ${tile.name} (need ${payoff}).`);
+  }
+
+  const next: GameState = {
+    ...payRoubles(state, playerId, payoff),
+    mortgagedTileIds: state.mortgagedTileIds.filter((id) => id !== tileId),
+  };
+  return logEvent(next, `Paid off the mortgage on ${tile.name} for ${payoff} roubles.`);
 }
 
 /**

@@ -4,7 +4,9 @@ import { findCard } from '../data/cards';
 import {
   buildHouseAndSync,
   callShowTrialAndSync,
+  mortgagePropertyAndSync,
   sellHouseAndSync,
+  unmortgagePropertyAndSync,
   useDenounceCollaboratorsAndSync,
   useSecretInformantAndSync,
 } from '../lib/gameSync';
@@ -58,20 +60,26 @@ function Hand({ room, roomCode, playerId, game }: HandProps) {
             </button>
             {isExpanded && (
               <div className="hand-card-detail">
-                {tile.kind === 'property' ? (
+                {tile.kind === 'property' && (
                   <>
                     <p>
                       Price: ₽{tile.price}
                       <br />
                       {houseCountLabel(game.propertyHouses[tileId] ?? 0)}
+                      {game.mortgagedTileIds.includes(tileId) && ' (mortgaged)'}
                     </p>
                     <HouseControls roomCode={roomCode} playerId={playerId} game={game} tileId={tileId} />
                   </>
-                ) : (
+                )}
+                {tile.kind === 'railroad' && (
                   <p>
-                    {tile.kind === 'railroad' && `Price: ₽${tile.price}`}
-                    {tile.kind === 'utility' && 'Utility'}
+                    Price: ₽{tile.price}
+                    {game.mortgagedTileIds.includes(tileId) && ' (mortgaged)'}
                   </p>
+                )}
+                {tile.kind === 'utility' && <p>Utility</p>}
+                {(tile.kind === 'property' || tile.kind === 'railroad') && (
+                  <MortgageControls roomCode={roomCode} playerId={playerId} game={game} tileId={tileId} />
                 )}
               </div>
             )}
@@ -155,6 +163,56 @@ function HouseControls({ roomCode, playerId, game, tileId }: HouseControlsProps)
       >
         Sell {isHotel ? 'Hotel' : 'House'} (₽{Math.floor(tile.houseCost / 2)})
       </button>
+    </div>
+  );
+}
+
+interface MortgageControlsProps {
+  roomCode: string;
+  playerId: string;
+  game: GameState;
+  tileId: number;
+}
+
+// Mortgage/unmortgage a property or railroad card. Blocked from
+// mortgaging while houses are on it or anywhere else in its color
+// group (standard Monopoly rule) - the engine already enforces this and
+// just no-ops otherwise, but the button here is disabled up front too so
+// it doesn't look like nothing happened.
+function MortgageControls({ roomCode, playerId, game, tileId }: MortgageControlsProps) {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property' && tile.kind !== 'railroad') return null;
+
+  const me = game.players[playerId];
+  const isMortgaged = game.mortgagedTileIds.includes(tileId);
+  const mortgageValue = Math.floor(tile.price / 2);
+  const payoff = Math.round(mortgageValue * 1.1);
+
+  const groupHasHouses =
+    tile.kind === 'property' &&
+    BOARD.filter((t) => t.kind === 'property' && t.colorGroup === tile.colorGroup).some(
+      (t) => (game.propertyHouses[t.id] ?? 0) > 0,
+    );
+
+  return (
+    <div className="hand-card-action">
+      {isMortgaged ? (
+        <button
+          type="button"
+          onClick={() => unmortgagePropertyAndSync(roomCode, game, playerId, tileId)}
+          disabled={me.roubles < payoff}
+        >
+          Pay Off Mortgage (₽{payoff})
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => mortgagePropertyAndSync(roomCode, game, playerId, tileId)}
+          disabled={groupHasHouses}
+        >
+          Mortgage (₽{mortgageValue})
+        </button>
+      )}
     </div>
   );
 }

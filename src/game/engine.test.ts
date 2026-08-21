@@ -16,12 +16,14 @@ import {
   devSetForcedCard,
   devSetForcedRoll,
   endTurn,
+  mortgageProperty,
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   rollDice,
   sellHouse,
   skipPurchase,
+  unmortgageProperty,
   useDenounceCollaborators,
   useSecretInformant,
 } from './engine';
@@ -2003,5 +2005,111 @@ describe("Hat's power (free house on completing a collection)", () => {
     expect(state.hatFreeHouseGroups).toEqual([]);
     expect(state.propertyHouses[1]).toBe(0);
     expect(state.housesRemaining).toBe(32); // the house came back to the bank
+  });
+});
+
+describe('mortgaging', () => {
+  it('mortgages a property for half its price', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+
+    state = mortgageProperty(state, 'p1', 6);
+
+    expect(state.players.p1.roubles).toBe(1000 + 50);
+    expect(state.mortgagedTileIds).toEqual([6]);
+  });
+
+  it('mortgages a railroad too', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [5] } } };
+
+    state = mortgageProperty(state, 'p1', 5); // Komsomolskaya Station, price 200
+
+    expect(state.players.p1.roubles).toBe(1000 + 100);
+    expect(state.mortgagedTileIds).toEqual([5]);
+  });
+
+  it("refuses to mortgage if there are houses anywhere in the property's collection", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6, 8, 9] } },
+      propertyHouses: { 8: 2 }, // houses on a group-mate, not tile 6 itself
+    };
+    state = mortgageProperty(state, 'p1', 6);
+
+    expect(state.mortgagedTileIds).toEqual([]);
+    expect(state.players.p1.roubles).toBe(1000);
+  });
+
+  it('refuses to build a house on a mortgaged property', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6, 8, 9] } },
+    };
+    state = mortgageProperty(state, 'p1', 6);
+    const afterMortgage = state;
+
+    state = buildHouse(state, 'p1', 6);
+
+    expect(state.propertyHouses[6]).toBeUndefined();
+    expect(state.players.p1.roubles).toBe(afterMortgage.players.p1.roubles);
+  });
+
+  it('a mortgaged property charges no rent', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = mortgageProperty(state, 'p1', 6);
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000); // no rent paid
+    expect(state.players.p1.roubles).toBe(1000 + 50); // just the mortgage payout, no rent
+  });
+
+  it('pays off a mortgage for the mortgage value plus 10% interest', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = mortgageProperty(state, 'p1', 6); // +50, roubles now 1050
+
+    state = unmortgageProperty(state, 'p1', 6); // pays back 55 (50 * 1.1)
+
+    expect(state.mortgagedTileIds).toEqual([]);
+    expect(state.players.p1.roubles).toBe(1050 - 55);
+  });
+
+  it("refuses to pay off a mortgage without enough roubles", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6], roubles: 10 } },
+      mortgagedTileIds: [6],
+    };
+
+    state = unmortgageProperty(state, 'p1', 6);
+
+    expect(state.mortgagedTileIds).toEqual([6]);
+    expect(state.players.p1.roubles).toBe(10);
+  });
+
+  it('a mortgage on a property automatically clears (unrefunded) if the owner Disappears', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } },
+      mortgagedTileIds: [6],
+    };
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.mortgagedTileIds).toEqual([]);
   });
 });
