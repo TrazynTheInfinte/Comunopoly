@@ -205,9 +205,15 @@ function resolveChernobylLanding(state: GameState, playerId: string): GameState 
     return state; // revisiting your own doom, nothing new happens
   }
 
+  const transferred: GameState = {
+    ...transferTileOwnership(state, CHERNOBYL_TILE_ID, ownerId, playerId),
+    // A fresh victim gets a fresh countdown, not whatever was left of the
+    // previous owner's.
+    chernobylCountdown: null,
+  };
   return logEvent(
-    transferTileOwnership(state, CHERNOBYL_TILE_ID, ownerId, playerId),
-    'Chernobyl Power was forcibly handed to you - the countdown carries over.',
+    transferred,
+    'Chernobyl Power was forcibly handed to you - the countdown resets.',
   );
 }
 
@@ -576,7 +582,7 @@ export function endTurn(state: GameState): GameState {
     ? chargeJailBribe(state, endingPlayerId)
     : state;
 
-  next = tickChernobyl(next);
+  next = tickChernobyl(next, endingPlayerId);
   next = advanceTurn(next);
 
   return {
@@ -599,15 +605,20 @@ function chargeJailBribe(state: GameState, playerId: string): GameState {
 }
 
 /**
- * Ticks the Chernobyl Power countdown once, called at the end of every
- * turn (regardless of whose). Safe (no countdown) whenever it's unowned
- * or its owner also holds The Volga; otherwise the countdown starts (or
- * keeps counting down) toward 0, at which point it explodes.
+ * Ticks the Chernobyl Power countdown once, called at the end of a
+ * turn - but only counts down on the OWNER's own turns ending, not
+ * everyone else's ("explode in 3 turns" means 3 of their turns). Safe
+ * (no countdown) whenever it's unowned or the owner also holds The
+ * Volga; otherwise the countdown starts (or keeps counting down) toward
+ * 0, at which point it explodes.
  */
-function tickChernobyl(state: GameState): GameState {
+function tickChernobyl(state: GameState, endingPlayerId: string): GameState {
   const ownerId = findOwner(state, CHERNOBYL_TILE_ID);
   if (!ownerId || state.players[ownerId].ownedTileIds.includes(VOLGA_TILE_ID)) {
     return { ...state, chernobylCountdown: null };
+  }
+  if (ownerId !== endingPlayerId) {
+    return state; // not the owner's turn - the countdown doesn't move
   }
 
   const remaining = (state.chernobylCountdown ?? CHERNOBYL_COUNTDOWN_TURNS) - 1;
@@ -616,7 +627,7 @@ function tickChernobyl(state: GameState): GameState {
   }
   return logEvent(
     { ...state, chernobylCountdown: remaining },
-    `Chernobyl Power will explode in ${remaining} turn${remaining === 1 ? '' : 's'} unless its owner gets The Volga.`,
+    `Chernobyl Power will explode in ${remaining} of its owner's turn${remaining === 1 ? '' : 's'} unless they get The Volga.`,
   );
 }
 

@@ -395,19 +395,39 @@ describe('Chernobyl Power', () => {
     expect(state.players.p2.ownedTileIds).toEqual([12]);
   });
 
-  it('explodes after 3 turns without its owner holding The Volga, destroying their other properties', () => {
+  it("explodes after 3 of its owner's own turns without them holding The Volga, destroying their other properties", () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
       players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12, 6] } },
     };
-    state = endTurn(state); // tick -> countdown 2
-    state = endTurn(state); // tick -> countdown 1
-    state = endTurn(state); // tick -> explodes
+    // Turns alternate p1/p2, and only the owner's (p1's) own turns tick
+    // the countdown - p2 ending their turn shouldn't move it at all.
+    state = endTurn(state); // p1's turn ends -> tick, countdown 2
+    state = endTurn(state); // p2's turn ends -> no tick
+    state = endTurn(state); // p1's turn ends -> tick, countdown 1
+    state = endTurn(state); // p2's turn ends -> no tick
+    state = endTurn(state); // p1's turn ends -> tick, explodes
 
     expect(state.players.p1.ownedTileIds).toEqual([]);
     expect(state.destroyedTileIds).toEqual([6]);
     expect(state.chernobylCountdown).toBeNull();
+  });
+
+  it("resets the countdown when hot-potatoed to a new owner", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12] } },
+    };
+    state = endTurn(state); // p1's turn ends -> tick, countdown 2
+    expect(state.chernobylCountdown).toBe(2);
+
+    state = devSetForcedRoll(state, [6, 6]); // p2: 0 + 12 -> tile 12, hot potato
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([12]);
+    expect(state.chernobylCountdown).toBeNull(); // reset, not carried over at 2
   });
 
   it("doesn't tick down while the owner also holds The Volga", () => {

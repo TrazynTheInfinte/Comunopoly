@@ -11,6 +11,7 @@ import {
 } from '../lib/gameSync';
 import type { Room } from '../types/room';
 import DevPanel from './DevPanel';
+import PropertiesPanel from './PropertiesPanel';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -136,6 +137,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           </button>
         </div>
       )}
+
+      <PropertiesPanel ownedTileIds={game.players[playerId]?.ownedTileIds ?? []} />
 
       <ul className="event-log">
         {game.log
