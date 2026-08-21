@@ -1,17 +1,78 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import './App.css';
+import Lobby from './components/Lobby';
+import { createRoom, joinRoom } from './lib/rooms';
+import {
+  getOrCreatePlayerId,
+  getStoredName,
+  storeName,
+} from './lib/playerIdentity';
 
-// A React "component" is just a function that returns JSX (the
-// HTML-looking syntax below). React calls this function again - a
-// "re-render" - whenever its state changes, and updates the real page to
-// match whatever the function returns.
+type View = 'landing' | 'name-entry' | 'lobby';
+type Mode = 'create' | 'join';
+
 function App() {
-  // useState gives this component a piece of memory that survives
-  // between re-renders. Calling the setter (e.g. setView) both stores the
-  // new value AND tells React "re-render this component."
-  const [view, setView] = useState<'landing' | 'join'>('landing');
-  const [name, setName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
+  const [view, setView] = useState<View>('landing');
+  const [mode, setMode] = useState<Mode>('join');
+  const [name, setName] = useState(() => getStoredName());
+  const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [activeRoomCode, setActiveRoomCode] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // A player's identity is just a random ID this browser remembers -
+  // no accounts. useState's "lazy initializer" (passing a function
+  // instead of a value) means getOrCreatePlayerId() only runs once, on
+  // the first render, instead of on every re-render.
+  const [playerId] = useState(() => getOrCreatePlayerId());
+
+  function openNameEntry(nextMode: Mode) {
+    setMode(nextMode);
+    setError('');
+    setView('name-entry');
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault(); // don't let the browser reload the page
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        throw new Error('Enter a name.');
+      }
+
+      const roomCode =
+        mode === 'create'
+          ? await createRoom(playerId, trimmedName)
+          : await joinRoomAndReturnCode(roomCodeInput, trimmedName);
+
+      storeName(trimmedName);
+      setActiveRoomCode(roomCode);
+      setView('lobby');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function joinRoomAndReturnCode(
+    codeInput: string,
+    trimmedName: string,
+  ): Promise<string> {
+    const code = codeInput.trim().toUpperCase();
+    if (!code) {
+      throw new Error('Enter a room code.');
+    }
+    await joinRoom(code, playerId, trimmedName);
+    return code;
+  }
+
+  if (view === 'lobby') {
+    return <Lobby roomCode={activeRoomCode} playerId={playerId} />;
+  }
 
   return (
     <main className="app">
@@ -20,46 +81,52 @@ function App() {
 
       {view === 'landing' && (
         <div className="actions">
-          <button onClick={() => setView('join')}>Join Room</button>
-          {/* Creating a room is really just "join with a freshly
-              generated Room Code" - left disabled until the Firebase
-              room logic exists to actually generate and store one. */}
-          <button disabled>Create Room</button>
+          <button onClick={() => openNameEntry('join')}>Join Room</button>
+          <button onClick={() => openNameEntry('create')}>Create Room</button>
         </div>
       )}
 
-      {view === 'join' && (
-        <form
-          className="join-form"
-          onSubmit={(event) => {
-            // Forms reload the page by default when submitted - we're
-            // handling submission ourselves, so stop that.
-            event.preventDefault();
-            console.log('TODO: join room', { name, roomCode });
-          }}
-        >
+      {view === 'name-entry' && (
+        <form className="join-form" onSubmit={handleSubmit}>
           <label>
             Name
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Comrade..."
+              autoFocus
               required
             />
           </label>
-          <label>
-            Room Code
-            <input
-              value={roomCode}
-              onChange={(event) =>
-                setRoomCode(event.target.value.toUpperCase())
-              }
-              placeholder="XXXX"
-              required
-            />
-          </label>
-          <button type="submit">Enter</button>
-          <button type="button" onClick={() => setView('landing')}>
+
+          {mode === 'join' && (
+            <label>
+              Room Code
+              <input
+                value={roomCodeInput}
+                onChange={(event) =>
+                  setRoomCodeInput(event.target.value.toUpperCase())
+                }
+                placeholder="XXXX"
+                required
+              />
+            </label>
+          )}
+
+          {error && <p className="error">{error}</p>}
+
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting
+              ? 'Please wait...'
+              : mode === 'create'
+                ? 'Create Room'
+                : 'Join Room'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('landing')}
+            disabled={isSubmitting}
+          >
             Back
           </button>
         </form>
