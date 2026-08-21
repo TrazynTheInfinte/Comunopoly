@@ -2,8 +2,10 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import type { GameState, PieceId } from '../types/game';
 import {
+  acceptVolgaOffer,
   buyProperty,
   createInitialGameState,
+  declineVolgaOffer,
   devSetForcedRoll,
   devSetRoubles,
   endTurn,
@@ -42,6 +44,14 @@ export async function skipPurchaseAndSync(roomCode: string, game: GameState) {
 
 export async function endTurnAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, endTurn(game));
+}
+
+export async function acceptVolgaOfferAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, acceptVolgaOffer(game));
+}
+
+export async function declineVolgaOfferAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, declineVolgaOffer(game));
 }
 
 export async function devSetRoublesAndSync(

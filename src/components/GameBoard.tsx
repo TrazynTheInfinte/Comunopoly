@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
 import {
+  acceptVolgaOfferAndSync,
   buyPropertyAndSync,
+  declineVolgaOfferAndSync,
   endTurnAndSync,
   rollDiceAndSync,
   skipPurchaseAndSync,
@@ -109,7 +111,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         </div>
       )}
 
-      {isMyTurn && pendingTile && (
+      {isMyTurn && pendingTile && game.pendingDecision?.type === 'purchase' && (
         <div className="purchase-prompt">
           <p>
             Buy {pendingTile.name}
@@ -117,6 +119,21 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           </p>
           <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
           <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>
+        </div>
+      )}
+
+      {isMyTurn && pendingTile && game.pendingDecision?.type === 'volgaOffer' && (
+        <div className="purchase-prompt">
+          <p>
+            Give away everything you own to claim {pendingTile.name}? Your
+            properties will be split evenly among the other players.
+          </p>
+          <button onClick={() => acceptVolgaOfferAndSync(roomCode, game)}>
+            Give It Up
+          </button>
+          <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>
+            Decline
+          </button>
         </div>
       )}
 

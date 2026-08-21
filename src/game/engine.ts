@@ -15,6 +15,12 @@ const RAILROAD_RENT_BY_COUNT = [25, 50, 100, 200];
 const JAIL_POSITION = 10;
 const JAIL_BRIBE = 100;
 const MAX_DOUBLES_BEFORE_JAIL = 3;
+const CHERNOBYL_TILE_ID = 12;
+const VOLGA_TILE_ID = 28;
+const KREMLIN_TILE_ID = 37;
+const NKVD_TILE_ID = 39;
+const KREMLIN_BONUS = 200;
+const CHERNOBYL_COUNTDOWN_TURNS = 3;
 
 /** Sets up a fresh game: every player starts on STOY with 1000 Roubles and the Piece they were assigned. */
 export function createInitialGameState(
@@ -28,6 +34,9 @@ export function createInitialGameState(
       roubles: STARTING_ROUBLES,
       ownedTileIds: [],
       inJail: false,
+      kremlinVisits: 0,
+      nkvdVisits: 0,
+      skipNextTurn: false,
     };
   }
 
@@ -40,6 +49,8 @@ export function createInitialGameState(
     doublesCount: 0,
     pendingDecision: null,
     forcedRoll: null,
+    chernobylCountdown: null,
+    destroyedTileIds: [],
     log: ['The game begins.'],
   };
 }
@@ -139,6 +150,156 @@ function disappearStub(
   );
 }
 
+function giveTileTo(
+  state: GameState,
+  tileId: number,
+  playerId: string,
+): GameState {
+  const player = state.players[playerId];
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: { ...player, ownedTileIds: [...player.ownedTileIds, tileId] },
+    },
+  };
+}
+
+function transferTileOwnership(
+  state: GameState,
+  tileId: number,
+  fromPlayerId: string,
+  toPlayerId: string,
+): GameState {
+  const from = state.players[fromPlayerId];
+  const withoutTile: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [fromPlayerId]: {
+        ...from,
+        ownedTileIds: from.ownedTileIds.filter((id) => id !== tileId),
+      },
+    },
+  };
+  return giveTileTo(withoutTile, tileId, toPlayerId);
+}
+
+/**
+ * Chernobyl Power: forced free ownership if unowned ("entrusted to you
+ * for free... you have to take it"). If someone already owns it, it gets
+ * forcibly handed to whoever just landed on it instead - a hot potato
+ * that carries the explosion countdown along with it. The countdown
+ * itself is ticked once per turn in tickChernobyl(), not here.
+ */
+function resolveChernobylLanding(state: GameState, playerId: string): GameState {
+  const ownerId = findOwner(state, CHERNOBYL_TILE_ID);
+
+  if (!ownerId) {
+    return logEvent(
+      giveTileTo(state, CHERNOBYL_TILE_ID, playerId),
+      'Forced to take ownership of Chernobyl Power (free) - watch that countdown.',
+    );
+  }
+  if (ownerId === playerId) {
+    return state; // revisiting your own doom, nothing new happens
+  }
+
+  return logEvent(
+    transferTileOwnership(state, CHERNOBYL_TILE_ID, ownerId, playerId),
+    'Chernobyl Power was forcibly handed to you - the countdown carries over.',
+  );
+}
+
+/**
+ * The Volga: landing on someone else's Volga forces you to hand over
+ * everything you own - unless you own nothing, in which case you steal
+ * the Volga instead. Landing on an unowned Volga while you own at least
+ * one property offers a decision (see acceptVolgaOffer/declineVolgaOffer);
+ * owning nothing at all means there's nothing to "distribute," so you
+ * just claim it.
+ */
+function resolveVolgaLanding(state: GameState, playerId: string): GameState {
+  const ownerId = findOwner(state, VOLGA_TILE_ID);
+  const landerProperties = state.players[playerId].ownedTileIds;
+
+  if (ownerId === playerId) return state; // landing on your own Volga
+
+  if (ownerId) {
+    if (landerProperties.length === 0) {
+      return logEvent(
+        transferTileOwnership(state, VOLGA_TILE_ID, ownerId, playerId),
+        'You had nothing to give up, so you claimed The Volga instead!',
+      );
+    }
+    let next = state;
+    for (const tileId of landerProperties) {
+      next = transferTileOwnership(next, tileId, playerId, ownerId);
+    }
+    return logEvent(
+      next,
+      "Forced to surrender everything you own to The Volga's owner.",
+    );
+  }
+
+  if (landerProperties.length === 0) {
+    return logEvent(
+      giveTileTo(state, VOLGA_TILE_ID, playerId),
+      'You owned nothing to give up, so you claimed The Volga for free.',
+    );
+  }
+  return { ...state, pendingDecision: { type: 'volgaOffer', tileId: VOLGA_TILE_ID } };
+}
+
+/** The Kremlin: "Visit Stalin!" - collect on odd visits, jailed on even ones. The rules only spell out visits 1 and 2; we extend that as an alternating pattern for anything past that. */
+function resolveKremlinLanding(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  const visits = player.kremlinVisits + 1;
+  let next: GameState = {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, kremlinVisits: visits } },
+  };
+
+  if (visits % 2 === 1) {
+    next = giveRoubles(next, playerId, KREMLIN_BONUS);
+    return logEvent(
+      next,
+      `Visited Stalin at the Kremlin - collected ${KREMLIN_BONUS} roubles.`,
+    );
+  }
+  next = sendToJail(next, playerId);
+  return logEvent(next, 'Stalin had enough of your visits - sent to jail!');
+}
+
+/** NKVD HQ: cycles through miss-a-turn, jail, and Disappear every 3 visits, per the rules' 1st/2nd/3rd-visit escalation. */
+function resolveNkvdLanding(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  const visits = player.nkvdVisits + 1;
+  let next: GameState = {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, nkvdVisits: visits } },
+  };
+
+  const cycle = visits % 3;
+  if (cycle === 1) {
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [playerId]: { ...next.players[playerId], skipNextTurn: true },
+      },
+    };
+    return logEvent(
+      next,
+      'Stopped for questioning at NKVD HQ - you will miss your next turn.',
+    );
+  }
+  if (cycle === 2) {
+    return logEvent(sendToJail(next, playerId), 'NKVD HQ sent you to jail.');
+  }
+  return disappearStub(next, playerId, 'disappeared at NKVD HQ after repeated visits');
+}
+
 function resolveLanding(
   state: GameState,
   playerId: string,
@@ -149,6 +310,13 @@ function resolveLanding(
   switch (tile.kind) {
     case 'property':
     case 'railroad': {
+      if (state.destroyedTileIds.includes(tile.id)) {
+        return logEvent(
+          state,
+          `${tile.name} was destroyed in the Chernobyl disaster - it can never be owned again.`,
+        );
+      }
+
       const ownerId = findOwner(state, tile.id);
       if (!ownerId) {
         return {
@@ -181,10 +349,18 @@ function resolveLanding(
     }
     case 'goToJail':
       return logEvent(sendToJail(state, playerId), 'Sent directly to jail!');
+    case 'utility':
+      if (tile.id === CHERNOBYL_TILE_ID) return resolveChernobylLanding(state, playerId);
+      if (tile.id === VOLGA_TILE_ID) return resolveVolgaLanding(state, playerId);
+      return state;
+    case 'special':
+      if (tile.id === KREMLIN_TILE_ID) return resolveKremlinLanding(state, playerId);
+      if (tile.id === NKVD_TILE_ID) return resolveNkvdLanding(state, playerId);
+      return state;
     // Jail (just visiting) and Free Parking have no effect yet -
-    // Smuggling isn't implemented in this increment. Utilities, cards,
-    // and the special tiles (Kremlin/NKVD HQ) are all deferred entirely
-    // for now: the piece lands there and nothing else happens yet.
+    // Smuggling isn't implemented in this increment. Card tiles are
+    // deferred entirely for now: the piece lands there and nothing else
+    // happens yet.
     default:
       return state;
   }
@@ -344,6 +520,36 @@ export function skipPurchase(state: GameState): GameState {
   return logEvent({ ...state, pendingDecision: null }, 'Declined to buy.');
 }
 
+/** The current player gives away everything they own (split evenly among the other players) to claim The Volga. */
+export function acceptVolgaOffer(state: GameState): GameState {
+  const playerId = currentPlayerId(state);
+  if (state.pendingDecision?.type !== 'volgaOffer') return state;
+
+  const otherPlayers = state.turnOrder.filter((id) => id !== playerId);
+  const propertiesToGive = state.players[playerId].ownedTileIds;
+
+  let next = state;
+  propertiesToGive.forEach((tileId, index) => {
+    const recipient = otherPlayers[index % otherPlayers.length];
+    next = transferTileOwnership(next, tileId, playerId, recipient);
+  });
+  next = giveTileTo(next, VOLGA_TILE_ID, playerId);
+  next = { ...next, pendingDecision: null };
+  return logEvent(
+    next,
+    'Distributed all your properties evenly among the others and claimed The Volga.',
+  );
+}
+
+/** The current player declines the Volga offer - keeps their properties, doesn't get the Volga. */
+export function declineVolgaOffer(state: GameState): GameState {
+  if (state.pendingDecision?.type !== 'volgaOffer') return state;
+  return logEvent(
+    { ...state, pendingDecision: null },
+    'Declined to give up your properties for The Volga.',
+  );
+}
+
 /**
  * Ends the current player's turn - unless they rolled doubles, in which
  * case they go again instead of passing the turn ("if you get a double,
@@ -354,7 +560,9 @@ export function skipPurchase(state: GameState): GameState {
  * If the player is still in jail as their turn ends, this also charges
  * the mandatory 100 rouble bribe (or Disappears them if they can't
  * afford it) - "you must bribe the guards... at the end of your turn or
- * you will disappear."
+ * you will disappear." It also ticks the Chernobyl Power countdown once
+ * (see tickChernobyl) and skips over any player whose next turn was
+ * cancelled by NKVD HQ (see advanceTurn).
  */
 export function endTurn(state: GameState): GameState {
   if (state.pendingDecision) return state;
@@ -368,10 +576,11 @@ export function endTurn(state: GameState): GameState {
     ? chargeJailBribe(state, endingPlayerId)
     : state;
 
-  const nextIndex = (next.currentTurnIndex + 1) % next.turnOrder.length;
+  next = tickChernobyl(next);
+  next = advanceTurn(next);
+
   return {
     ...next,
-    currentTurnIndex: nextIndex,
     lastRoll: null,
     lastRollWasDoubles: false,
     doublesCount: 0,
@@ -387,6 +596,79 @@ function chargeJailBribe(state: GameState, playerId: string): GameState {
     payRoubles(state, playerId, JAIL_BRIBE),
     `Paid the ${JAIL_BRIBE} rouble jail bribe.`,
   );
+}
+
+/**
+ * Ticks the Chernobyl Power countdown once, called at the end of every
+ * turn (regardless of whose). Safe (no countdown) whenever it's unowned
+ * or its owner also holds The Volga; otherwise the countdown starts (or
+ * keeps counting down) toward 0, at which point it explodes.
+ */
+function tickChernobyl(state: GameState): GameState {
+  const ownerId = findOwner(state, CHERNOBYL_TILE_ID);
+  if (!ownerId || state.players[ownerId].ownedTileIds.includes(VOLGA_TILE_ID)) {
+    return { ...state, chernobylCountdown: null };
+  }
+
+  const remaining = (state.chernobylCountdown ?? CHERNOBYL_COUNTDOWN_TURNS) - 1;
+  if (remaining <= 0) {
+    return explodeChernobyl(state, ownerId);
+  }
+  return logEvent(
+    { ...state, chernobylCountdown: remaining },
+    `Chernobyl Power will explode in ${remaining} turn${remaining === 1 ? '' : 's'} unless its owner gets The Volga.`,
+  );
+}
+
+function explodeChernobyl(state: GameState, ownerId: string): GameState {
+  const owner = state.players[ownerId];
+  const destroyedNow = owner.ownedTileIds.filter((id) => id !== CHERNOBYL_TILE_ID);
+
+  const next: GameState = {
+    ...state,
+    chernobylCountdown: null,
+    destroyedTileIds: [...state.destroyedTileIds, ...destroyedNow],
+    players: { ...state.players, [ownerId]: { ...owner, ownedTileIds: [] } },
+  };
+  return logEvent(
+    next,
+    "Chernobyl Power exploded! All of its owner's other properties are destroyed forever.",
+  );
+}
+
+/**
+ * Moves currentTurnIndex to the next player, skipping (and clearing the
+ * flag on) anyone whose turn was cancelled by NKVD HQ. Bounded to one
+ * lap of the table so it can't loop forever in the freak case where
+ * every remaining player is somehow flagged at once.
+ */
+function advanceTurn(state: GameState): GameState {
+  let next = state;
+  let index = next.currentTurnIndex;
+
+  for (let i = 0; i < next.turnOrder.length; i++) {
+    index = (index + 1) % next.turnOrder.length;
+    const candidateId = next.turnOrder[index];
+    const candidate = next.players[candidateId];
+
+    if (candidate.skipNextTurn) {
+      next = logEvent(
+        {
+          ...next,
+          players: {
+            ...next.players,
+            [candidateId]: { ...candidate, skipNextTurn: false },
+          },
+        },
+        'A turn was skipped (NKVD questioning).',
+      );
+      continue;
+    }
+
+    return { ...next, currentTurnIndex: index };
+  }
+
+  return { ...next, currentTurnIndex: index };
 }
 
 // --- Dev panel helpers -------------------------------------------------

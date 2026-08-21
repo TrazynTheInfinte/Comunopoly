@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acceptVolgaOffer,
   buyProperty,
   createInitialGameState,
+  declineVolgaOffer,
   devSetForcedRoll,
   endTurn,
   rollDice,
@@ -286,5 +288,234 @@ describe('jail', () => {
     expect(state.players.p1.inJail).toBe(false);
     expect(state.players.p1.roubles).toBe(1000); // reset by the placeholder
     expect(state.currentTurnIndex).toBe(1);
+  });
+});
+
+describe('The Kremlin', () => {
+  it('collects 200 roubles on the first visit', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [3, 4]); // 30 + 7 -> tile 37, The Kremlin
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1200);
+    expect(state.players.p1.kremlinVisits).toBe(1);
+  });
+
+  it('sends the player to jail on the second visit', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, kremlinVisits: 1 } },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.position).toBe(10);
+  });
+});
+
+describe('NKVD HQ', () => {
+  it('sets skipNextTurn on the first visit', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]); // 30 + 9 -> tile 39, NKVD HQ
+    state = rollDice(state);
+
+    expect(state.players.p1.skipNextTurn).toBe(true);
+    expect(state.players.p1.nkvdVisits).toBe(1);
+  });
+
+  it('jails on the second visit', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, nkvdVisits: 1 } },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it('disappears (placeholder) on the third visit', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, nkvdVisits: 2, roubles: 500, ownedTileIds: [6] },
+      },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+});
+
+it("skips a flagged player's turn when ending the previous turn", () => {
+  let state = createInitialGameState(PLAYERS);
+  state = {
+    ...state,
+    players: { ...state.players, p2: { ...state.players.p2, skipNextTurn: true } },
+  };
+  state = endTurn(state); // p1 ends their turn; p2 should be skipped, landing back on p1
+
+  expect(state.currentTurnIndex).toBe(0);
+  expect(state.players.p2.skipNextTurn).toBe(false);
+});
+
+describe('Chernobyl Power', () => {
+  it('is forced onto whoever lands on it while unowned, for free', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedRoll(state, [6, 6]); // 0 + 12 -> tile 12
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([12]);
+    expect(state.players.p1.roubles).toBe(1000); // free
+  });
+
+  it('gets forcibly handed to the next player who lands on it (hot potato)', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12] } },
+    };
+    state = endTurn(state); // p2's turn
+    state = devSetForcedRoll(state, [6, 6]); // p2: 0 + 12 -> tile 12
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.players.p2.ownedTileIds).toEqual([12]);
+  });
+
+  it('explodes after 3 turns without its owner holding The Volga, destroying their other properties', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12, 6] } },
+    };
+    state = endTurn(state); // tick -> countdown 2
+    state = endTurn(state); // tick -> countdown 1
+    state = endTurn(state); // tick -> explodes
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.destroyedTileIds).toEqual([6]);
+    expect(state.chernobylCountdown).toBeNull();
+  });
+
+  it("doesn't tick down while the owner also holds The Volga", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12, 28] } },
+    };
+    state = endTurn(state);
+    state = endTurn(state);
+    state = endTurn(state);
+    state = endTurn(state);
+
+    expect(state.chernobylCountdown).toBeNull();
+    expect(state.players.p1.ownedTileIds).toEqual([12, 28]); // never exploded
+  });
+});
+
+describe('The Volga', () => {
+  it('offers a give-everything-away decision when landing on it unowned with properties', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } },
+    };
+    state = withPosition(state, 'p1', 20);
+    state = devSetForcedRoll(state, [3, 5]); // 20 + 8 -> tile 28, The Volga
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'volgaOffer', tileId: 28 });
+  });
+
+  it('claims the Volga for free when landing on it unowned with nothing to give', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([28]);
+    expect(state.pendingDecision).toBeNull();
+  });
+
+  it('accepting the offer distributes properties evenly and grants the Volga', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' },
+      { playerId: 'p2', pieceId: 'battleship' },
+      { playerId: 'p3', pieceId: 'car' },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [1, 3, 6] } },
+    };
+    state = withPosition(state, 'p1', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+    state = acceptVolgaOffer(state);
+
+    expect(state.players.p1.ownedTileIds).toEqual([28]);
+    expect(state.players.p2.ownedTileIds).toEqual([1, 6]);
+    expect(state.players.p3.ownedTileIds).toEqual([3]);
+  });
+
+  it('declining the offer keeps properties and leaves the Volga unowned', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } },
+    };
+    state = withPosition(state, 'p1', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+    state = declineVolgaOffer(state);
+
+    expect(state.pendingDecision).toBeNull();
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+  });
+
+  it('forces the landing player to surrender everything to the Volga owner', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [28] },
+        p2: { ...state.players.p2, ownedTileIds: [1, 3] },
+      },
+    };
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([]);
+    expect(state.players.p1.ownedTileIds).toEqual(expect.arrayContaining([1, 3, 28]));
+  });
+
+  it('steals the Volga if the landing player owns nothing', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [28] } },
+    };
+    state = endTurn(state); // p2's turn, p2 owns nothing
+    state = withPosition(state, 'p2', 20);
+    state = devSetForcedRoll(state, [3, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p2.ownedTileIds).toEqual([28]);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
   });
 });

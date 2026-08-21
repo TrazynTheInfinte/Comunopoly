@@ -98,21 +98,26 @@ export interface GamePlayerState {
   /** Board tile index, 0-39. */
   position: number;
   roubles: number;
-  /** Tile IDs of properties/railroads this player owns. */
+  /** Tile IDs of properties/railroads/utilities this player owns. */
   ownedTileIds: number[];
   inJail: boolean;
+  /** Times this player has landed on The Kremlin - odd visits pay out, even visits jail them. */
+  kremlinVisits: number;
+  /** Times this player has landed on NKVD HQ - cycles miss-a-turn / jail / Disappear every 3 visits. */
+  nkvdVisits: number;
+  /** Set by NKVD HQ's first-visit penalty; consumed (and cleared) the next time the turn would reach this player. */
+  skipNextTurn: boolean;
 }
 
 /**
- * A decision the current player must make before their turn can end.
- * Currently only "buy the property you just landed on or don't" - more
- * variants (e.g. resolving a drawn card) join this union in later
- * increments.
+ * A decision the current player must make before their turn can end:
+ * either buy the property they just landed on, or (landing on an unowned
+ * Volga) give away everything they own to claim it. More variants (e.g.
+ * resolving a drawn card) join this union in later increments.
  */
-export interface PendingPurchase {
-  type: 'purchase';
-  tileId: number;
-}
+export type PendingDecision =
+  | { type: 'purchase'; tileId: number }
+  | { type: 'volgaOffer'; tileId: number };
 
 export interface GameState {
   /** Player IDs in turn order. */
@@ -123,9 +128,13 @@ export interface GameState {
   lastRollWasDoubles: boolean;
   /** Consecutive doubles rolled by the current player this turn (outside jail) - 3 in a row sends them to jail instead of moving. Resets whenever the turn actually passes to someone else. */
   doublesCount: number;
-  pendingDecision: PendingPurchase | null;
+  pendingDecision: PendingDecision | null;
   /** Dev-panel override: if set, the next rollDice() call uses this instead of a random roll, then clears it. */
   forcedRoll: [number, number] | null;
+  /** Turns left before Chernobyl Power explodes on its current owner - null if unowned, or if the owner also holds The Volga (safe, no countdown). */
+  chernobylCountdown: number | null;
+  /** Tile IDs destroyed by a Chernobyl explosion - permanently unownable for the rest of the game. */
+  destroyedTileIds: number[];
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }
