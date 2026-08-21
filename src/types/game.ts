@@ -131,14 +131,16 @@ export interface GamePlayerState {
 /**
  * A decision the current player must make before their turn can end:
  * buy the property they just landed on, give away everything to claim
- * an unowned Volga, pick a target for a card that needs one (Siege of
- * Stalingrad, Double Agent, Phone Call from Stalin), answer NKVD's
- * doctrine question, or acknowledge a drawn Communist Test/No Chance
- * card before play continues.
+ * an unowned Volga, pick which card to draw (Car on Communist Test,
+ * Dog on No Chance - their Special Power), pick a target for a card
+ * that needs one (Siege of Stalingrad, Double Agent, Phone Call from
+ * Stalin), answer NKVD's doctrine question, or acknowledge a drawn
+ * Communist Test/No Chance card before play continues.
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
   | { type: 'volgaOffer'; tileId: number }
+  | { type: 'cardChoice'; deck: CardDeck }
   | { type: 'cardTarget'; cardId: string }
   | { type: 'nkvdQuiz'; questionIndex: number }
   | { type: 'cardDrawn'; cardId: string };

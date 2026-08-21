@@ -9,6 +9,7 @@ import {
   buyProperty,
   callShowTrial,
   castShowTrialVote,
+  chooseCard,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -67,6 +68,10 @@ export async function declineVolgaOfferAndSync(roomCode: string, game: GameState
 
 export async function acknowledgeCardAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, acknowledgeCard(game));
+}
+
+export async function chooseCardAndSync(roomCode: string, game: GameState, cardId: string) {
+  await writeGameState(roomCode, chooseCard(game, cardId));
 }
 
 export async function resolveCardTargetAndSync(

@@ -7,6 +7,7 @@ import {
   buyProperty,
   callShowTrial,
   castShowTrialVote,
+  chooseCard,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -1302,5 +1303,173 @@ describe('dev helpers', () => {
     expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
     // Forced draws never touch the pile.
     expect(state.communistTestDrawPile).toHaveLength(COMMUNIST_TEST_CARDS.length);
+  });
+});
+
+describe('Piece Special Powers', () => {
+  // Boot's "utilities half price" is a documented no-op (utilities
+  // aren't purchasable in this variant - see data/pieces.ts) and has no
+  // code to test.
+
+  it('Battleship buys railroads at half price', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'battleship' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = devSetForcedRoll(state, [2, 3]); // 0 + 5 -> tile 5, Komsomolskaya Station, price 200
+    state = rollDice(state);
+    state = buyProperty(state);
+
+    expect(state.players.p1.roubles).toBe(1000 - 100); // half of 200
+    expect(state.players.p1.ownedTileIds).toEqual([5]);
+  });
+
+  it('Battleship still pays full price for ordinary properties', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'battleship' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = devSetForcedRoll(state, [3, 3]); // 0 + 6 -> Moscow Metro, price 100
+    state = rollDice(state);
+    state = buyProperty(state);
+
+    expect(state.players.p1.roubles).toBe(1000 - 100);
+  });
+
+  it('Iron never pays the STOY pass fee', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'iron' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // wraps past STOY to tile 1
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000); // no fee
+  });
+
+  it('Iron still collects the STOY landing bonus normally', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'iron' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 1]); // lands exactly on STOY
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000 + 200);
+  });
+
+  it('Thimble rolls only one die - moves by that single value, and it never counts as doubles', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'thimble' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    // Start at 10 (Jail, just a safe starting point) so landing on 14
+    // isn't a card tile - avoids an unrelated random card effect
+    // (e.g. Nomenklatura) making this test flaky.
+    state = withPosition(state, 'p1', 10);
+    state = rollDice(state, () => 0.5); // rollOneDie(0.5) -> floor(3) + 1 = 4
+
+    expect(state.players.p1.position).toBe(14);
+    expect(state.lastRoll).toEqual([4, 0]);
+    expect(state.lastRollWasDoubles).toBe(false);
+  });
+
+  it("Thimble can't roll doubles, so 3-doubles-to-jail never triggers no matter how many turns pass", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'thimble' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    // 11 -> 15 -> 19 -> 23, chosen so none of the three landings hit a
+    // card tile (which would introduce an unrelated random effect).
+    state = withPosition(state, 'p1', 11);
+    state = rollDice(state, () => 0.5);
+    state = rollDice(state, () => 0.5);
+    state = rollDice(state, () => 0.5);
+
+    expect(state.players.p1.inJail).toBe(false);
+  });
+
+  it('Car opens a card-choice decision on Communist Test', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 35);
+    state = devSetForcedRoll(state, [3, 4]); // 35 + 7 -> tile 2, Communist Test
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'communistTest' });
+  });
+
+  it('Car draws normally (no choice) on No Chance tiles', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
+    state = rollDice(state);
+
+    expect(state.pendingDecision?.type).not.toBe('cardChoice');
+  });
+
+  it('chooseCard lets Car take a specific card out of the pile and resolves it', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 35);
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+    expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'communistTest' });
+
+    state = chooseCard(state, 'bankError');
+
+    // 35 + 7 wraps through STOY (a 50 rouble fee), then Bank Error gives 1000.
+    expect(state.players.p1.roubles).toBe(1000 - 50 + 1000);
+    expect(state.communistTestDrawPile).not.toContain('bankError');
+    expect(state.communistTestDiscardPile).toContain('bankError');
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
+  });
+
+  it("chooseCard does nothing if the chosen card isn't actually in the pile", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 35);
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    const before = state;
+    state = chooseCard(state, 'not-a-real-card-id');
+    expect(state).toBe(before);
+  });
+
+  it('Dog opens a card-choice decision on No Chance', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'dog' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'noChance' });
+  });
+
+  it("the forced-card dev override bypasses Car/Dog's choice entirely", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' },
+      { playerId: 'p2', pieceId: 'boot' },
+    ]);
+    state = withPosition(state, 'p1', 35);
+    state = devSetForcedCard(state, 'bankError');
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError' });
   });
 });

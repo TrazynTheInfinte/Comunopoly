@@ -596,10 +596,10 @@ const CARD_EFFECTS: Record<
 };
 
 /**
- * Draws a card (or uses a dev-panel forced one) and either resolves it
- * immediately (see CARD_EFFECTS) or, for cards needing a target, opens a
- * cardTarget decision first. Phone Call from Stalin gets its own inline
- * handling since its die roll decides whether targeting even happens.
+ * Draws a card (or uses a dev-panel forced one) for a normal landing,
+ * or - for Car on Communist Test / Dog on No Chance, their Special
+ * Power - opens a cardChoice decision instead, letting the player pick
+ * which card to take rather than getting the top one.
  */
 function resolveCardLanding(
   state: GameState,
@@ -607,9 +607,15 @@ function resolveCardLanding(
   deck: CardDeck,
   rng: () => number,
 ): GameState {
+  const pieceId = state.players[playerId].pieceId;
+  const canChoose =
+    (pieceId === 'car' && deck === 'communistTest') || (pieceId === 'dog' && deck === 'noChance');
+  if (canChoose && !state.forcedCardId) {
+    return { ...state, pendingDecision: { type: 'cardChoice', deck } };
+  }
+
   let next: GameState;
   let cardId: string;
-
   if (state.forcedCardId) {
     cardId = state.forcedCardId;
     next = { ...state, forcedCardId: null };
@@ -618,9 +624,50 @@ function resolveCardLanding(
     next = drawn.state;
     cardId = drawn.cardId;
   }
+  return applyDrawnCard(next, playerId, cardId, rng);
+}
 
+/**
+ * The current player picks a specific card still in the deck's draw
+ * pile (Car/Dog's choose-a-card power), instead of drawing blind. If
+ * `cardId` isn't actually in that pile, this is a no-op.
+ */
+export function chooseCard(
+  state: GameState,
+  cardId: string,
+  rng: () => number = Math.random,
+): GameState {
+  if (state.pendingDecision?.type !== 'cardChoice') return state;
+  const playerId = currentPlayerId(state);
+  const { deck } = state.pendingDecision;
+  const drawKey = deck === 'communistTest' ? 'communistTestDrawPile' : 'noChanceDrawPile';
+  const discardKey = deck === 'communistTest' ? 'communistTestDiscardPile' : 'noChanceDiscardPile';
+
+  if (!state[drawKey].includes(cardId)) return state;
+
+  const next: GameState = {
+    ...state,
+    [drawKey]: state[drawKey].filter((id) => id !== cardId),
+    [discardKey]: [...state[discardKey], cardId],
+  };
+  return applyDrawnCard(next, playerId, cardId, rng);
+}
+
+/**
+ * Applies whatever a drawn card ID does: resolves it immediately (see
+ * CARD_EFFECTS) or, for cards needing a target, opens a cardTarget
+ * decision first. Phone Call from Stalin and NKVD get their own inline
+ * handling since a die roll (or a quiz) decides what happens next.
+ * Shared by both a normal draw and Car/Dog's chosen one.
+ */
+function applyDrawnCard(
+  state: GameState,
+  playerId: string,
+  cardId: string,
+  rng: () => number,
+): GameState {
   const card = findCard(cardId);
-  next = logEvent(next, `Drew "${card.title}": ${card.text}`);
+  let next = logEvent(state, `Drew "${card.title}": ${card.text}`);
 
   if (cardId === 'phoneCallFromStalin') {
     const roll = rollOneDie(rng);
@@ -807,7 +854,8 @@ function moveAndResolve(
 
   next = logEvent(next, `Moved to ${getTile(newPosition).name}.`);
 
-  if (passedStoy && !options.waiveStoyFee) {
+  // Iron's power: never has to pay the bribe to pass STOY.
+  if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
     next = payRoubles(next, playerId, STOY_PASS_FEE);
     next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
   }
@@ -906,7 +954,14 @@ export function rollDice(
   const playerId = currentPlayerId(state);
   const player = state.players[playerId];
 
-  const roll = state.forcedRoll ?? rollTwoDice(rng);
+  // Thimble's power: only rolls 1 die. Representing that as [n, 0]
+  // (rather than changing the roll's shape everywhere) makes the
+  // existing math work out for free: steps = n + 0 = n, and isDoubles =
+  // (n === 0) is always false, since a die never shows 0 - exactly
+  // right, since a single die can't roll doubles.
+  const roll =
+    state.forcedRoll ??
+    (player.pieceId === 'thimble' ? ([rollOneDie(rng), 0] as [number, number]) : rollTwoDice(rng));
   const [die1, die2] = roll;
   const isDoubles = die1 === die2;
   const steps = die1 + die2;
@@ -914,7 +969,9 @@ export function rollDice(
   let next: GameState = { ...state, forcedRoll: null, lastRoll: roll };
   next = logEvent(
     next,
-    `Rolled ${die1} + ${die2}${isDoubles ? ' (doubles!)' : ''}.`,
+    player.pieceId === 'thimble'
+      ? `Rolled ${die1} (one die).`
+      : `Rolled ${die1} + ${die2}${isDoubles ? ' (doubles!)' : ''}.`,
   );
 
   if (player.inJail) {
@@ -944,9 +1001,14 @@ export function buyProperty(state: GameState): GameState {
   if (tile.kind !== 'property' && tile.kind !== 'railroad') return state;
 
   const player = state.players[playerId];
-  if (player.roubles < tile.price) return state; // can't afford it - use Skip instead
+  // Battleship's power: rail stations are half price.
+  const price =
+    tile.kind === 'railroad' && player.pieceId === 'battleship'
+      ? Math.floor(tile.price / 2)
+      : tile.price;
+  if (player.roubles < price) return state; // can't afford it - use Skip instead
 
-  let next = payRoubles(state, playerId, tile.price);
+  let next = payRoubles(state, playerId, price);
   next = {
     ...next,
     pendingDecision: null,
@@ -958,7 +1020,7 @@ export function buyProperty(state: GameState): GameState {
       },
     },
   };
-  return logEvent(next, `Bought ${tile.name} for ${tile.price} roubles.`);
+  return logEvent(next, `Bought ${tile.name} for ${price} roubles.`);
 }
 
 /** The current player declines to buy - the property stays unowned. */

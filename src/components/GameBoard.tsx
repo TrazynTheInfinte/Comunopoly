@@ -13,6 +13,7 @@ import {
   skipPurchaseAndSync,
 } from '../lib/gameSync';
 import type { Room } from '../types/room';
+import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
@@ -80,8 +81,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         </p>
         {game.lastRoll && (
           <p className="dice-result">
-            Rolled {game.lastRoll[0]} + {game.lastRoll[1]}
-            {game.lastRollWasDoubles ? ' (doubles!)' : ''}
+            {game.lastRoll[1] === 0
+              ? `Rolled ${game.lastRoll[0]} (one die)`
+              : `Rolled ${game.lastRoll[0]} + ${game.lastRoll[1]}${game.lastRollWasDoubles ? ' (doubles!)' : ''}`}
           </p>
         )}
         {game.trotskyHidingSpot !== null && (
@@ -168,6 +170,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
             Continue
           </button>
         </div>
+      )}
+
+      {isMyTurn && game.pendingDecision?.type === 'cardChoice' && (
+        <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
       )}
 
       {isMyTurn && game.pendingDecision?.type === 'cardTarget' && (
