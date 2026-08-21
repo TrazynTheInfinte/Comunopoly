@@ -11,6 +11,7 @@ import {
   callShowTrial,
   castShowTrialVote,
   chooseCard,
+  chooseNewPiece,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -23,6 +24,7 @@ import {
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
+  resolveSmuggleOffer,
   rollDice,
   sellHouse,
   skipPurchase,
@@ -215,6 +217,19 @@ export async function unmortgagePropertyAndSync(
   tileId: number,
 ) {
   await writeGameState(roomCode, unmortgageProperty(game, playerId, tileId));
+}
+
+export async function resolveSmuggleOfferAndSync(roomCode: string, game: GameState, amount: number) {
+  await writeGameState(roomCode, resolveSmuggleOffer(game, amount));
+}
+
+export async function chooseNewPieceAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  pieceId: PieceId,
+) {
+  await writeGameState(roomCode, chooseNewPiece(game, playerId, pieceId));
 }
 
 export async function devDrawCardAndSync(

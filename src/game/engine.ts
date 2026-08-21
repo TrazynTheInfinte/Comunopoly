@@ -5,7 +5,10 @@ import {
   findCard,
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
+import { STARTING_PIECES } from '../data/pieces';
 import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId } from '../types/game';
+
+const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
 
 const STARTING_ROUBLES = 1000;
 const STOY_LANDING_BONUS = 200;
@@ -65,6 +68,9 @@ export function createInitialGameState(
       hidingPosition: null,
       heldCardIds: [],
       isTrotsky: false,
+      westRoubles: 0,
+      pendingWestRoubles: 0,
+      isSpectating: false,
     };
   }
 
@@ -96,6 +102,8 @@ export function createInitialGameState(
     hotelsRemaining: STARTING_HOTELS,
     hatFreeHouseGroups: [],
     mortgagedTileIds: [],
+    retiredPieceIds: [],
+    pendingPieceChoices: [],
     log: ['The game begins.'],
   };
 }
@@ -167,6 +175,10 @@ function payRoubles(
   return giveRoubles(state, playerId, -amount);
 }
 
+function canAfford(state: GameState, playerId: string, amount: number): boolean {
+  return state.players[playerId].roubles >= amount;
+}
+
 function logEvent(state: GameState, message: string): GameState {
   // Cap the log so it doesn't grow forever over a long game - the last 20
   // events is plenty for players to scroll back through.
@@ -185,14 +197,15 @@ function sendToJail(state: GameState, playerId: string): GameState {
 }
 
 /**
- * TEMPORARY placeholder for the real Disappear mechanic (seize
- * everything, respawn as a NEW piece drawn from the Piece Pool - see
- * CONTEXT.md). That needs the Piece Pool/multi-piece system, which
- * doesn't exist yet. Until then, "disappearing" just resets this player
- * to a fresh start under their SAME piece, so jail is testable without
- * getting stuck. Replace this once the real respawn system is built.
+ * Disappears a player: every asset (Roubles, properties, houses/hotels,
+ * mortgages, held cards, West stash - safe or still waiting at Free
+ * Parking) is Seized, their current Piece is retired forever, and they
+ * either get to pick a fresh Piece from whatever's left in the Piece
+ * Pool (see resolvePendingPieceChoices/pendingPieceChoices), or, if the
+ * Pool is already empty, they're permanently out - spectating for the
+ * rest of the match, per CONTEXT.md's Endgame note.
  */
-function disappearStub(
+function disappearPlayer(
   state: GameState,
   playerId: string,
   reason: string,
@@ -201,8 +214,7 @@ function disappearStub(
 
   // Bankrupt-to-the-bank: any houses/hotels on this player's properties
   // return to the bank's supply (the tiles themselves just go back to
-  // being unowned, same simplification as everything else in this
-  // TEMPORARY placeholder).
+  // being unowned).
   let propertyHouses = state.propertyHouses;
   let housesRemaining = state.housesRemaining;
   let hotelsRemaining = state.hotelsRemaining;
@@ -221,17 +233,19 @@ function disappearStub(
   // them is wiped rather than sticking around on a now-unowned tile.
   const mortgagedTileIds = state.mortgagedTileIds.filter((id) => !player.ownedTileIds.includes(id));
 
+  const retiredPieceId = player.pieceId;
+
   let next: GameState = {
     ...state,
     propertyHouses,
     housesRemaining,
     hotelsRemaining,
     mortgagedTileIds,
-    // Hat's piece stays with this player through Disappear (see the
-    // placeholder note above), so any groups already rewarded no longer
-    // apply - they've lost every property. Clearing this lets completing
-    // the same group again later re-trigger the free house.
-    hatFreeHouseGroups: player.pieceId === 'hat' ? [] : state.hatFreeHouseGroups,
+    retiredPieceIds: [...state.retiredPieceIds, retiredPieceId],
+    // Hat's piece is retired along with everything else here, so any
+    // groups it was already rewarded for no longer apply - completing
+    // the same group again under a future Piece re-triggers the reward.
+    hatFreeHouseGroups: retiredPieceId === 'hat' ? [] : state.hatFreeHouseGroups,
     players: {
       ...state.players,
       [playerId]: {
@@ -245,6 +259,8 @@ function disappearStub(
         hidingPosition: null,
         heldCardIds: [],
         isTrotsky: false,
+        westRoubles: 0,
+        pendingWestRoubles: 0,
       },
     },
   };
@@ -273,10 +289,31 @@ function disappearStub(
     // waiting on a player who no longer has anything to decide.
     next = { ...next, pendingDecision: null };
   }
-  return logEvent(
-    next,
-    `Disappeared (${reason}). [placeholder reset - full respawn not yet implemented]`,
+
+  const pool = availablePieceIds(next, playerId);
+  if (pool.length === 0) {
+    next = {
+      ...next,
+      players: { ...next.players, [playerId]: { ...next.players[playerId], isSpectating: true } },
+    };
+    return logEvent(
+      next,
+      `Disappeared (${reason}). No Pieces left in the Piece Pool - permanently out, spectating the rest of the match.`,
+    );
+  }
+
+  next = { ...next, pendingPieceChoices: [...next.pendingPieceChoices, playerId] };
+  return logEvent(next, `Disappeared (${reason}). Choosing a new Piece.`);
+}
+
+/** Every Piece ID not currently held by another active player and not permanently retired - what `playerId` can pick from right now. */
+function availablePieceIds(state: GameState, playerId: string): PieceId[] {
+  const heldByOthers = new Set(
+    Object.entries(state.players)
+      .filter(([id]) => id !== playerId)
+      .map(([, p]) => p.pieceId),
   );
+  return ALL_PIECE_IDS.filter((id) => !state.retiredPieceIds.includes(id) && !heldByOthers.has(id));
 }
 
 function giveTileTo(
@@ -484,7 +521,7 @@ function resolveNkvdLanding(state: GameState, playerId: string): GameState {
   if (cycle === 2) {
     return logEvent(sendToJail(next, playerId), 'NKVD HQ sent you to jail.');
   }
-  return disappearStub(next, playerId, 'disappeared at NKVD HQ after repeated visits');
+  return disappearPlayer(next, playerId, 'disappeared at NKVD HQ after repeated visits');
 }
 
 // --- Card effect helpers -------------------------------------------------
@@ -632,7 +669,7 @@ function greatPurgeEffect(state: GameState, _playerId: string, rng: () => number
   next = logEvent(next, 'The Great Purge: everyone loses half their tradeable properties.');
 
   const loserId = next.turnOrder[Math.floor(rng() * next.turnOrder.length)];
-  return disappearStub(next, loserId, 'lost the Great Purge (randomly chosen in place of rock-paper-scissors)');
+  return disappearPlayer(next, loserId, 'lost the Great Purge (randomly chosen in place of rock-paper-scissors)');
 }
 
 /**
@@ -649,7 +686,7 @@ function bestsellerEffect(state: GameState, playerId: string, rng: () => number)
     return logEvent(next, `Rolled a ${roll} - burned the evidence and denied everything. Kept the 500 roubles.`);
   }
   if (roll === 1) {
-    return disappearStub(next, playerId, 'rolled a 1 trying to cover up the bestseller');
+    return disappearPlayer(next, playerId, 'rolled a 1 trying to cover up the bestseller');
   }
 
   const tradeable = next.players[playerId].ownedTileIds.filter((t) => isTradeable(next, t));
@@ -695,7 +732,7 @@ const CARD_EFFECTS: Record<
   (state: GameState, playerId: string, rng: () => number) => GameState
 > = {
   bankError: (state, playerId) => giveRoubles(state, playerId, 1000),
-  accident: (state, playerId) => disappearStub(state, playerId, 'an "accident"'),
+  accident: (state, playerId) => disappearPlayer(state, playerId, 'an "accident"'),
   antiRevisionist: (state, playerId) => {
     const player = state.players[playerId];
     return { ...state, players: { ...state.players, [playerId]: { ...player, turnsToSkip: 1 } } };
@@ -821,7 +858,7 @@ function applyCardEffectsFor(
   if (cardId === 'phoneCallFromStalin') {
     const roll = rollOneDie(rng);
     if (roll === 1) {
-      next = disappearStub(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`);
+      next = disappearPlayer(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`);
       return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
     }
     next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
@@ -909,6 +946,12 @@ function resolveLanding(
   // Commissar a toll instead of its normal effect; the Commissar closes
   // an unclosed one just by landing on it, instead of its normal effect.
   if (state.closedTileIds.includes(position) && playerId !== state.commissarPlayerId) {
+    if (!canAfford(state, playerId, TELEGRAPH_UNION_TOLL)) {
+      return logEvent(
+        sendToJail(state, playerId),
+        `Couldn't afford the ${TELEGRAPH_UNION_TOLL} rouble toll on ${tile.name} - Destitute, sent to jail.`,
+      );
+    }
     let next = payRoubles(state, playerId, TELEGRAPH_UNION_TOLL);
     if (state.commissarPlayerId) {
       next = giveRoubles(next, state.commissarPlayerId, TELEGRAPH_UNION_TOLL / 2);
@@ -993,33 +1036,47 @@ function resolveLanding(
           pendingDecision: { type: 'purchase', tileId: tile.id },
         };
       }
+
+      // From here on the tile is owned by someone (possibly playerId
+      // themselves) - Penguin's power lets them Smuggle when landing on
+      // any owned property/railroad, whoever owns it and whatever else
+      // happens on the landing, so every branch below funnels into one
+      // return that checks for it instead of repeating the check.
+      let result: GameState;
+
       if (ownerId === playerId) {
-        return state; // already yours, nothing happens
-      }
-      if (state.mortgagedTileIds.includes(tile.id)) {
-        return logEvent(state, `${tile.name} is mortgaged - no rent owed.`);
+        result = state; // already yours, nothing else happens
+      } else if (state.mortgagedTileIds.includes(tile.id)) {
+        result = logEvent(state, `${tile.name} is mortgaged - no rent owed.`);
+      } else {
+        const rent =
+          tile.kind === 'railroad'
+            ? RAILROAD_RENT_BY_COUNT[railroadsOwnedBy(state, ownerId) - 1]
+            : tile.rentTable[state.propertyHouses[tile.id] ?? 0];
+
+        if (!canAfford(state, playerId, rent)) {
+          return logEvent(
+            sendToJail(state, playerId),
+            `Couldn't afford ${rent} roubles rent on ${tile.name} - Destitute, sent to jail.`,
+          );
+        }
+
+        const next = payRoubles(state, playerId, rent);
+        const owner = state.players[ownerId];
+        result =
+          owner.inJail || owner.blacklisted
+            ? // "When in jail, any rent you collect is seized by the
+              // state" - Blacklist's "cannot... collect rent" gets the
+              // same treatment: the payer still pays, but the owner
+              // never sees it.
+              logEvent(
+                next,
+                `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is ${owner.inJail ? 'in jail' : 'blacklisted'}).`,
+              )
+            : logEvent(giveRoubles(next, ownerId, rent), `Paid ${rent} roubles rent on ${tile.name}.`);
       }
 
-      const rent =
-        tile.kind === 'railroad'
-          ? RAILROAD_RENT_BY_COUNT[railroadsOwnedBy(state, ownerId) - 1]
-          : tile.rentTable[state.propertyHouses[tile.id] ?? 0];
-
-      const next = payRoubles(state, playerId, rent);
-      const owner = state.players[ownerId];
-      if (owner.inJail || owner.blacklisted) {
-        // "When in jail, any rent you collect is seized by the state" -
-        // Blacklist's "cannot... collect rent" gets the same treatment:
-        // the payer still pays, but the owner never sees it.
-        return logEvent(
-          next,
-          `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is ${owner.inJail ? 'in jail' : 'blacklisted'}).`,
-        );
-      }
-      return logEvent(
-        giveRoubles(next, ownerId, rent),
-        `Paid ${rent} roubles rent on ${tile.name}.`,
-      );
+      return actingPieceId === 'penguin' ? openSmuggleDecision(result, playerId) : result;
     }
     case 'goToJail':
       return logEvent(sendToJail(state, playerId), 'Sent directly to jail!');
@@ -1033,11 +1090,64 @@ function resolveLanding(
       return state;
     case 'card':
       return resolveCardLanding(state, playerId, tile.deck, rng);
-    // Jail (just visiting) and Free Parking have no effect yet -
-    // Smuggling isn't implemented in this increment.
+    case 'freeParking':
+      return resolveFreeParkingLanding(state, playerId);
+    // Jail (just visiting) has no effect.
     default:
       return state;
   }
+}
+
+/**
+ * Free Parking: first, anyone else's Roubles still waiting here get
+ * caught (this player keeps them, the original smuggler Disappears) -
+ * then, if this player's own Smuggled Roubles made it back here in
+ * time, they're now safely in the West. Either way, offer this player
+ * the chance to Smuggle some more before moving on.
+ */
+function resolveFreeParkingLanding(state: GameState, playerId: string): GameState {
+  let next = state;
+
+  for (const otherId of next.turnOrder) {
+    if (otherId === playerId) continue;
+    const pending = next.players[otherId].pendingWestRoubles;
+    if (pending <= 0) continue;
+    next = giveRoubles(next, playerId, pending);
+    next = {
+      ...next,
+      players: { ...next.players, [otherId]: { ...next.players[otherId], pendingWestRoubles: 0 } },
+    };
+    next = logEvent(
+      next,
+      `Caught ${pending} roubles waiting at Free Parking - it never made it to the West.`,
+    );
+    next = disappearPlayer(next, otherId, 'got caught smuggling to the West');
+  }
+
+  const secured = next.players[playerId].pendingWestRoubles;
+  if (secured > 0) {
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [playerId]: {
+          ...next.players[playerId],
+          westRoubles: next.players[playerId].westRoubles + secured,
+          pendingWestRoubles: 0,
+        },
+      },
+    };
+    next = logEvent(next, `${secured} roubles safely Smuggled to the West.`);
+  }
+
+  return openSmuggleDecision(next, playerId);
+}
+
+/** Opens the smuggleOffer decision - how much (if anything) to Smuggle right now - if this player actually has Roubles to offer. */
+function openSmuggleDecision(state: GameState, playerId: string): GameState {
+  const maxAmount = state.players[playerId].roubles;
+  if (maxAmount <= 0) return state;
+  return { ...state, pendingDecision: { type: 'smuggleOffer', maxAmount } };
 }
 
 /**
@@ -1077,6 +1187,12 @@ function moveAndResolve(
 
   // Iron's power: never has to pay the bribe to pass STOY.
   if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
+    if (!canAfford(next, playerId, STOY_PASS_FEE)) {
+      return logEvent(
+        sendToJail(next, playerId),
+        `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
+      );
+    }
     next = payRoubles(next, playerId, STOY_PASS_FEE);
     next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
   }
@@ -1086,6 +1202,26 @@ function moveAndResolve(
       next,
       `Collected ${STOY_LANDING_BONUS} roubles for landing on STOY.`,
     );
+  }
+
+  // STOY sits directly opposite Free Parking on the board - reaching it
+  // (passing through or landing exactly) is the other way (besides
+  // making it back to Free Parking itself) to secure Smuggled Roubles
+  // still waiting there.
+  if ((passedStoy || landedOnStoy) && next.players[playerId].pendingWestRoubles > 0) {
+    const secured = next.players[playerId].pendingWestRoubles;
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [playerId]: {
+          ...next.players[playerId],
+          westRoubles: next.players[playerId].westRoubles + secured,
+          pendingWestRoubles: 0,
+        },
+      },
+    };
+    next = logEvent(next, `${secured} roubles safely Smuggled to the West.`);
   }
 
   // Blacklist clears once you've made it back around to (or through)
@@ -1105,7 +1241,7 @@ function moveAndResolve(
   // them out - they Disappear early.
   for (const [otherId, otherPlayer] of Object.entries(next.players)) {
     if (otherId !== playerId && otherPlayer.hidingPosition === newPosition) {
-      next = disappearStub(next, otherId, 'found while hiding');
+      next = disappearPlayer(next, otherId, 'found while hiding');
     }
   }
 
@@ -1131,7 +1267,7 @@ function moveAndResolve(
   const trap = next.phoneCallTraps.find((t) => t.tileId === newPosition && t.playerId === playerId);
   if (trap) {
     next = { ...next, phoneCallTraps: next.phoneCallTraps.filter((t) => t !== trap) };
-    return disappearStub(next, playerId, 'landed back on a Phone Call from Stalin property');
+    return disappearPlayer(next, playerId, 'landed back on a Phone Call from Stalin property');
   }
 
   return resolveLanding(next, playerId, newPosition, rng);
@@ -1172,7 +1308,7 @@ function resolveJailRoll(
   }
 
   if (die1 === 1 || die2 === 1) {
-    return disappearStub(next, playerId, 'rolled a 1 in jail');
+    return disappearPlayer(next, playerId, 'rolled a 1 in jail');
   }
 
   return logEvent(next, 'Failed to roll doubles - still in jail.');
@@ -1190,6 +1326,7 @@ export function rollDice(
   rng: () => number = Math.random,
 ): GameState {
   const playerId = currentPlayerId(state);
+  if (state.pendingPieceChoices.includes(playerId)) return state; // must pick a new Piece first
   const player = state.players[playerId];
 
   // Thimble's power: only rolls 1 die. Representing that as [n, 0]
@@ -1465,7 +1602,7 @@ function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
 
   const next: GameState = { ...state, activeVote: null };
   if (verdict === 'disappear') {
-    return disappearStub(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
+    return disappearPlayer(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
   }
   const target = next.players[activeVote.targetPlayerId];
   return logEvent(
@@ -1499,6 +1636,60 @@ export function resolveRubberDuckEncounter(state: GameState, sendToJailChoice: b
     return logEvent(next, 'Chose not to send them to jail.');
   }
   return logEvent(sendToJail(next, targetPlayerId), "Sent them to jail (Stalin's body-double).");
+}
+
+/** The Piece IDs `playerId` can currently pick from - not held by anyone else active, and never permanently retired. Exposed for the UI's picker (name-only, per the design - power/win condition stay hidden same as Beginner-mode's initial pick). */
+export function getAvailablePieceIds(state: GameState, playerId: string): PieceId[] {
+  return availablePieceIds(state, playerId);
+}
+
+/** Resolves how much (if anything) to Smuggle to the West right now. Clamped to what's actually on offer and what the player actually has; 0 (or anything invalid) just dismisses the prompt with nothing Smuggled. */
+export function resolveSmuggleOffer(state: GameState, amount: number): GameState {
+  if (state.pendingDecision?.type !== 'smuggleOffer') return state;
+  const playerId = currentPlayerId(state);
+  const player = state.players[playerId];
+  const clamped = Math.max(0, Math.min(Math.floor(amount), player.roubles, state.pendingDecision.maxAmount));
+
+  const next: GameState = { ...state, pendingDecision: null };
+  if (clamped === 0) {
+    return next;
+  }
+
+  const paid = payRoubles(next, playerId, clamped);
+  const withDeposit: GameState = {
+    ...paid,
+    players: {
+      ...paid.players,
+      [playerId]: {
+        ...paid.players[playerId],
+        pendingWestRoubles: paid.players[playerId].pendingWestRoubles + clamped,
+      },
+    },
+  };
+  return logEvent(withDeposit, `Smuggled ${clamped} roubles - waiting to make it safely to the West.`);
+}
+
+/**
+ * A Disappeared player picks their next Piece from whatever's left in
+ * the Piece Pool. Always their own choice (Beginner and Experienced room
+ * modes only affect the very first assignment, not a respawn), listed
+ * by name only - same as Beginner-mode's initial picker, no peeking at
+ * the power/win condition before committing.
+ */
+export function chooseNewPiece(state: GameState, playerId: string, pieceId: PieceId): GameState {
+  if (!state.pendingPieceChoices.includes(playerId)) return state;
+  if (!availablePieceIds(state, playerId).includes(pieceId)) return state; // no longer available - someone else just took it
+
+  const next: GameState = {
+    ...state,
+    pendingPieceChoices: state.pendingPieceChoices.filter((id) => id !== playerId),
+    players: {
+      ...state.players,
+      [playerId]: { ...state.players[playerId], pieceId },
+    },
+  };
+  const name = STARTING_PIECES.find((p) => p.id === pieceId)?.name ?? pieceId;
+  return logEvent(next, `Picked a new Piece: ${name}.`);
 }
 
 /**
@@ -1653,7 +1844,7 @@ export function accuseOfTrotsky(state: GameState, accusedId: string): GameState 
   }
 
   if (wasTrotsky) {
-    return disappearStub(next, accusedId, 'was correctly accused of being Trotsky');
+    return disappearPlayer(next, accusedId, 'was correctly accused of being Trotsky');
   }
   return logEvent(sendToJail(next, playerId), 'The accusation was wrong - sent to jail.');
 }
@@ -1725,7 +1916,7 @@ export function acknowledgeCard(state: GameState): GameState {
 function chargeJailBribe(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
   if (player.roubles < JAIL_BRIBE) {
-    return disappearStub(state, playerId, 'could not afford the jail bribe');
+    return disappearPlayer(state, playerId, 'could not afford the jail bribe');
   }
   return logEvent(
     payRoubles(state, playerId, JAIL_BRIBE),
@@ -1790,6 +1981,8 @@ function advanceTurn(state: GameState): GameState {
     index = (index + 1) % next.turnOrder.length;
     const candidateId = next.turnOrder[index];
     const candidate = next.players[candidateId];
+
+    if (candidate.isSpectating) continue; // permanently out - skipped forever, no log spam
 
     if (candidate.turnsToSkip > 0) {
       const turnsToSkip = candidate.turnsToSkip - 1;

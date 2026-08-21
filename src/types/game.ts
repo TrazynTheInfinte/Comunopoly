@@ -136,6 +136,12 @@ export interface GamePlayerState {
    * truly hidden without a validating server.
    */
   isTrotsky: boolean;
+  /** Roubles safely Smuggled to the West - protected from being taken by an opponent, but always fully Seized if this Piece Disappears. */
+  westRoubles: number;
+  /** Roubles Smuggled but still waiting at Free Parking - not yet safe. If ANY other player lands on Free Parking before this player lands there again (or passes/lands on STOY), that player keeps it and this player Disappears. Moves into westRoubles once secured. */
+  pendingWestRoubles: number;
+  /** Permanently out of the game (Disappeared after the Piece Pool ran dry, so there was no replacement Piece left to take) - keeps their seat and can watch, but is skipped in turn order forever and scores nothing at Endgame. */
+  isSpectating: boolean;
 }
 
 /**
@@ -153,6 +159,10 @@ export interface GamePlayerState {
  * drawer, but when Cat redirects a card, this is whoever they gave it
  * to instead. UI and resolution both key off this, not just "whoever's
  * turn it is."
+ *
+ * smuggleOffer is the current player choosing how much (if anything) to
+ * Smuggle to the West - opened on landing on Free Parking (everyone), or
+ * on landing on any owned property/railroad (Penguin's Special Power).
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
@@ -161,7 +171,8 @@ export type PendingDecision =
   | { type: 'catRedirect'; cardId: string }
   | { type: 'cardTarget'; cardId: string; forPlayerId: string }
   | { type: 'nkvdQuiz'; questionIndex: number; forPlayerId: string }
-  | { type: 'cardDrawn'; cardId: string; forPlayerId: string };
+  | { type: 'cardDrawn'; cardId: string; forPlayerId: string }
+  | { type: 'smuggleOffer'; maxAmount: number };
 
 export interface GameState {
   /** Player IDs in turn order. */
@@ -224,6 +235,19 @@ export interface GameState {
   hatFreeHouseGroups: ColorGroup[];
   /** Tile IDs (properties/railroads only - our utilities have no price to mortgage against) currently mortgaged: the owner already collected half its price and can't collect rent on it until they pay the mortgage off. Keyed by tile ID like propertyHouses, so it travels with the tile through forced-transfer mechanics. */
   mortgagedTileIds: number[];
+  /** Piece IDs permanently retired by a Disappear - "the old Piece is gone for good," never rejoins the Piece Pool for anyone, ever again. */
+  retiredPieceIds: PieceId[];
+  /**
+   * Player IDs who just Disappeared and need to pick their next Piece,
+   * in the order they Disappeared. A queue rather than a single slot
+   * because more than one player can be caught smuggling by the same
+   * Free Parking landing. Resolved via chooseNewPiece - independent of
+   * pendingDecision/turn order (the rest of the table keeps playing
+   * while someone here picks), except rollDice refuses to run for
+   * whoever's turn it is while they're still in this list, per Q10 -
+   * their "turn" just waits on the picker instead of silently skipping.
+   */
+  pendingPieceChoices: string[];
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }

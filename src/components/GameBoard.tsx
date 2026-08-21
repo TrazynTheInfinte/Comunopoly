@@ -19,9 +19,11 @@ import CatRedirectPrompt from './CatRedirectPrompt';
 import DevPanel from './DevPanel';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
+import PieceChoicePrompt from './PieceChoicePrompt';
 import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
+import SmuggleOfferPrompt from './SmuggleOfferPrompt';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -58,6 +60,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       ? findCard(game.pendingDecision.cardId)
       : null;
   const me = game.players[playerId];
+  const myPendingPieceChoice = game.pendingPieceChoices.includes(playerId);
   const canAccuseOfTrotsky =
     isMyTurn && game.trotskyHidingSpot !== null && me?.position === game.trotskyHidingSpot;
   const accusableOthers = game.turnOrder.filter((id) => id !== playerId);
@@ -110,17 +113,26 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
               <span className="player-name">
                 {room.players[id]?.name} ({pieceName(player.pieceId)})
               </span>
-              <span className="player-roubles">₽{player.roubles}</span>
+              <span className="player-roubles">
+                ₽{player.roubles}
+                {(player.westRoubles > 0 || player.pendingWestRoubles > 0) &&
+                  ` (West: ₽${player.westRoubles}${player.pendingWestRoubles > 0 ? ` + ₽${player.pendingWestRoubles} waiting` : ''})`}
+              </span>
               <span className="player-position">
-                {getTile(player.position).name}
+                {player.isSpectating ? 'Spectating' : getTile(player.position).name}
                 {player.inJail ? ' [JAIL]' : ''}
+                {game.pendingPieceChoices.includes(id) ? ' [choosing a new Piece]' : ''}
               </span>
             </li>
           );
         })}
       </ul>
 
-      {isMyTurn && !game.pendingDecision && (
+      {myPendingPieceChoice && (
+        <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
+      )}
+
+      {isMyTurn && !myPendingPieceChoice && !game.pendingDecision && (
         <div className="actions">
           {/* Roll is only available before this turn's first roll, or
               again after doubles ("if you get a double, you get to roll
@@ -181,6 +193,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
       {isMyTurn && game.pendingDecision?.type === 'cardChoice' && (
         <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
+      )}
+
+      {isMyTurn && game.pendingDecision?.type === 'smuggleOffer' && (
+        <SmuggleOfferPrompt maxAmount={game.pendingDecision.maxAmount} roomCode={roomCode} game={game} />
       )}
 
       {isMyTurn && game.pendingDecision?.type === 'catRedirect' && (

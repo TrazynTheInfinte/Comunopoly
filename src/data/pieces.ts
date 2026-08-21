@@ -75,14 +75,8 @@ export const STARTING_PIECES: PieceDefinition[] = [
     id: 'penguin',
     name: 'Penguin',
     title: 'Spy',
-    // TODO(smuggling): "smuggle money to the West when landing on any
-    // owned property" extends the base Smuggling/"the West" mechanic
-    // from CONTEXT.md, which was deferred at the very start of the
-    // project and still doesn't exist. Build base Smuggling first, then
-    // extend it here: Penguin should be able to smuggle on ANY owned
-    // property (not just their own + Free Parking).
     powerDescription:
-      'Can smuggle money to the West when landing on any owned property. [Not yet implemented - the base Smuggling mechanic does not exist yet.]',
+      'Can smuggle money to the West when landing on any owned property or railroad (not just Free Parking).',
     winConditionDescription:
       "You've been double-crossed. Before any scores are calculated, choose another player. You get their Score, and they get 0.",
   },

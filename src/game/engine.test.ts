@@ -9,6 +9,7 @@ import {
   callShowTrial,
   castShowTrialVote,
   chooseCard,
+  chooseNewPiece,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -16,10 +17,12 @@ import {
   devSetForcedCard,
   devSetForcedRoll,
   endTurn,
+  getAvailablePieceIds,
   mortgageProperty,
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
+  resolveSmuggleOffer,
   rollDice,
   sellHouse,
   skipPurchase,
@@ -1672,11 +1675,12 @@ describe("Rubber duck's power (offer to jail whoever they land on)", () => {
 
   it('lapses (implicitly "no") if Rubber duck ends their turn without acting on it', () => {
     let state = createInitialGameState(players);
-    // Free Parking (tile 20) has no landing effect of its own, so nothing
-    // else (like an unowned property's purchase prompt) blocks endTurn.
-    state = withPosition(state, 'p2', 20);
-    state = withPosition(state, 'p1', 15);
-    state = devSetForcedRoll(state, [2, 3]); // non-doubles roll, 15 + 5 -> tile 20
+    // Jail "just visiting" (tile 10) has no landing effect of its own, so
+    // nothing else (like an unowned property's purchase prompt, or Free
+    // Parking's smuggle offer) blocks endTurn.
+    state = withPosition(state, 'p2', 10);
+    state = withPosition(state, 'p1', 5);
+    state = devSetForcedRoll(state, [2, 3]); // non-doubles roll, 5 + 5 -> tile 10
     state = rollDice(state);
     expect(state.rubberDuckEncounter).not.toBeNull();
 
@@ -2111,5 +2115,352 @@ describe('mortgaging', () => {
 
     expect(state.players.p1.ownedTileIds).toEqual([]);
     expect(state.mortgagedTileIds).toEqual([]);
+  });
+});
+
+describe('Smuggling to the West', () => {
+  it('landing on Free Parking opens a smuggle offer up to the current roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]); // 15 + 5 -> tile 20, Free Parking
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'smuggleOffer', maxAmount: 1000 });
+  });
+
+  it('resolveSmuggleOffer deposits the chosen amount as pending (at-risk) West roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]);
+    state = rollDice(state);
+
+    state = resolveSmuggleOffer(state, 400);
+
+    expect(state.players.p1.roubles).toBe(600);
+    expect(state.players.p1.pendingWestRoubles).toBe(400);
+    expect(state.players.p1.westRoubles).toBe(0);
+    expect(state.pendingDecision).toBeNull();
+  });
+
+  it('skipping (0) smuggles nothing', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]);
+    state = rollDice(state);
+
+    state = resolveSmuggleOffer(state, 0);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+  });
+
+  it('clamps an offer above what the player actually has', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]);
+    state = rollDice(state);
+
+    state = resolveSmuggleOffer(state, 999999);
+
+    expect(state.players.p1.roubles).toBe(0);
+    expect(state.players.p1.pendingWestRoubles).toBe(1000);
+  });
+
+  it('landing back on Free Parking secures pending West roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100 } },
+    };
+    state = withPosition(state, 'p1', 15);
+    state = devSetForcedRoll(state, [2, 3]); // -> tile 20 again
+
+    state = rollDice(state);
+
+    expect(state.players.p1.westRoubles).toBe(100);
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+  });
+
+  it('passing/landing on STOY also secures pending West roubles (the checkpoint opposite Free Parking)', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100 } },
+    };
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1
+
+    state = rollDice(state);
+
+    expect(state.players.p1.westRoubles).toBe(100);
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+  });
+
+  it('another player landing on Free Parking catches pending West roubles and Disappears the smuggler', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 250 } },
+    };
+    state = endTurn(state); // p2's turn
+    state = withPosition(state, 'p2', 15);
+    state = devSetForcedRoll(state, [2, 3]); // p2 -> tile 20
+
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1000 + 250); // kept it
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+    expect(state.players.p1.westRoubles).toBe(0);
+    // p1 Disappeared: fresh start, old Piece retired, needs to pick a new one.
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.retiredPieceIds).toContain('boot');
+    expect(state.pendingPieceChoices).toContain('p1');
+  });
+
+  it('Disappearing for any other reason still fully Seizes both safe and pending West roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, westRoubles: 500, pendingWestRoubles: 100 },
+      },
+    };
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.westRoubles).toBe(0);
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+  });
+});
+
+describe("Penguin's power (smuggle on any owned property/railroad)", () => {
+  const players = [
+    { playerId: 'p1', pieceId: 'penguin' as const },
+    { playerId: 'p2', pieceId: 'boot' as const },
+  ];
+
+  it('opens a smuggle offer landing on their own owned property (normally a no-op)', () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6, already theirs
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'smuggleOffer', maxAmount: 1000 });
+  });
+
+  it("opens a smuggle offer landing on someone else's owned property, after rent resolves", () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000 - 6); // paid base rent first
+    expect(state.pendingDecision).toEqual({ type: 'smuggleOffer', maxAmount: 1000 - 6 });
+  });
+
+  it('extends to railroads too', () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [5] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [2, 3]); // -> tile 5, railroad, already theirs
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toEqual({ type: 'smuggleOffer', maxAmount: 1000 });
+  });
+
+  it('does NOT extend to utilities', () => {
+    let state = createInitialGameState(players);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [6, 6]); // -> tile 12, Chernobyl Power, already theirs
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toBeNull();
+  });
+
+  it("a non-Penguin piece landing on their own property still gets no smuggle prompt", () => {
+    let state = createInitialGameState(PLAYERS); // p1 is boot
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]);
+
+    state = rollDice(state);
+
+    expect(state.pendingDecision).toBeNull();
+  });
+});
+
+describe('Destitute (unpayable debts send you to jail instead of going negative)', () => {
+  it("can't afford rent - jailed, debt forgiven entirely, owner gets nothing", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 2 }, // rent on tile 6 is 6
+        p2: { ...state.players.p2, ownedTileIds: [6] },
+      },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6
+
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(2); // untouched, not partial payment
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p2.roubles).toBe(1000); // received nothing
+  });
+
+  it("can't afford the STOY pass fee - jailed en route, never actually resolves the landing tile", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 10, ownedTileIds: [] }, // fee is 50
+      },
+    };
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1 (unowned property)
+
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(10);
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.pendingDecision).toBeNull(); // never got a purchase prompt for tile 1
+  });
+
+  it("can't afford a Telegraph Union toll - jailed, no split paid to the Commissar", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      commissarPlayerId: 'p2',
+      closedTileIds: [6],
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 5 } }, // toll is 20
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 3]); // -> tile 6, closed
+
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(5);
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p2.roubles).toBe(1000); // no toll split received
+  });
+});
+
+describe('Disappear and the Piece Pool', () => {
+  it('retires the old Piece and queues the player to pick a new one, when the Pool has options', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.retiredPieceIds).toEqual(['boot']);
+    expect(state.pendingPieceChoices).toEqual(['p1']);
+    expect(state.players.p1.isSpectating).toBe(false);
+  });
+
+  it("rollDice refuses to run for a player who still needs to pick a new Piece", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, pendingPieceChoices: ['p1'] };
+
+    const result = rollDice(state);
+
+    expect(result).toBe(state);
+  });
+
+  it('chooseNewPiece assigns an available Piece and clears the pending choice', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, pendingPieceChoices: ['p1'], retiredPieceIds: ['boot'] };
+
+    state = chooseNewPiece(state, 'p1', 'iron');
+
+    expect(state.players.p1.pieceId).toBe('iron');
+    expect(state.pendingPieceChoices).toEqual([]);
+  });
+
+  it('rejects a Piece already held by someone else', () => {
+    let state = createInitialGameState(PLAYERS); // p2 already holds battleship
+    state = { ...state, pendingPieceChoices: ['p1'], retiredPieceIds: ['boot'] };
+
+    state = chooseNewPiece(state, 'p1', 'battleship');
+
+    expect(state.players.p1.pieceId).toBe('boot'); // unchanged - rejected
+    expect(state.pendingPieceChoices).toEqual(['p1']);
+  });
+
+  it('rejects a Piece that was permanently retired', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, pendingPieceChoices: ['p1'], retiredPieceIds: ['boot', 'iron'] };
+
+    state = chooseNewPiece(state, 'p1', 'iron');
+
+    expect(state.players.p1.pieceId).toBe('boot');
+  });
+
+  it('getAvailablePieceIds excludes both retired and other-held Pieces', () => {
+    // Realistic mid-Disappear shape: the old Piece is already retired by
+    // the time this gets called (see disappearPlayer), even though
+    // players.p1.pieceId itself still shows the stale value until they pick.
+    const state: GameState = { ...createInitialGameState(PLAYERS), retiredPieceIds: ['boot'] };
+    const available = getAvailablePieceIds(state, 'p1');
+
+    expect(available).not.toContain('boot');
+    expect(available).not.toContain('battleship');
+    expect(available).toHaveLength(10);
+  });
+
+  it('an empty Piece Pool leaves the player permanently spectating instead of queuing a choice', () => {
+    let state = createInitialGameState(PLAYERS); // p1 boot, p2 battleship
+    state = {
+      ...state,
+      // Retire everything except what's currently held - the next
+      // Disappear will have nothing left to offer.
+      retiredPieceIds: ['car', 'iron', 'thimble', 'dog', 'wheelBarrel', 'hat', 'penguin', 'cat', 'rubberDuck', 'trex'],
+    };
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.pendingPieceChoices).toEqual([]);
+    expect(state.retiredPieceIds).toContain('boot');
+  });
+
+  it('a spectating player is skipped forever in turn order', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' as const },
+      { playerId: 'p2', pieceId: 'battleship' as const },
+      { playerId: 'p3', pieceId: 'car' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p2: { ...state.players.p2, isSpectating: true } },
+    };
+    // Land on Jail "just visiting" (tile 10) - no side effect, so nothing
+    // blocks endTurn afterward.
+    state = devSetForcedRoll(state, [4, 6]); // non-doubles, 0 + 10 -> tile 10
+
+    state = rollDice(state); // p1's turn
+    state = endTurn(state);
+
+    expect(state.turnOrder[state.currentTurnIndex]).toBe('p3'); // skipped p2 entirely
   });
 });
