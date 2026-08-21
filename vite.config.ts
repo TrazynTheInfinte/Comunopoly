@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
 
@@ -14,13 +14,31 @@ function getBuildSha(): string {
   }
 }
 
+const buildSha = getBuildSha();
+
+// Emits a tiny version.json into the build output containing this
+// build's commit hash. Client-side code polls this file to notice when a
+// newer version has been deployed - see src/lib/versionWatcher.ts.
+function versionFilePlugin(): Plugin {
+  return {
+    name: 'emit-version-file',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ sha: buildSha }),
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionFilePlugin()],
   // GitHub Pages serves a project site (not a user/org site) from
   // https://<user>.github.io/<repo-name>/, so every built asset URL needs
   // that repo name prefixed, or the deployed page loads a blank screen.
   base: '/Comunopoly/',
   define: {
-    __BUILD_SHA__: JSON.stringify(getBuildSha()),
+    __BUILD_SHA__: JSON.stringify(buildSha),
   },
 });

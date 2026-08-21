@@ -7,11 +7,18 @@ import {
   getStoredName,
   storeName,
 } from './lib/playerIdentity';
+import { useVersionWatcher } from './lib/versionWatcher';
 
 type View = 'landing' | 'name-entry' | 'lobby';
 type Mode = 'create' | 'join';
 
 function App() {
+  // Runs for the lifetime of the app regardless of which screen is
+  // showing (App itself never unmounts, even though its return value
+  // switches between the landing screen and RoomView) - so a stale tab
+  // gets caught and reloaded even mid-game, not just on the menu.
+  useVersionWatcher();
+
   const [view, setView] = useState<View>('landing');
   const [mode, setMode] = useState<Mode>('join');
   const [name, setName] = useState(() => getStoredName());
