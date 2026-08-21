@@ -91,3 +91,39 @@ export interface PieceDefinition {
   powerDescription: string;
   winConditionDescription: string;
 }
+
+/** One player's state within an in-progress game (as opposed to RoomPlayer, which is just their lobby name). */
+export interface GamePlayerState {
+  pieceId: PieceId;
+  /** Board tile index, 0-39. */
+  position: number;
+  roubles: number;
+  /** Tile IDs of properties/railroads this player owns. */
+  ownedTileIds: number[];
+  inJail: boolean;
+}
+
+/**
+ * A decision the current player must make before their turn can end.
+ * Currently only "buy the property you just landed on or don't" - more
+ * variants (e.g. resolving a drawn card) join this union in later
+ * increments.
+ */
+export interface PendingPurchase {
+  type: 'purchase';
+  tileId: number;
+}
+
+export interface GameState {
+  /** Player IDs in turn order. */
+  turnOrder: string[];
+  currentTurnIndex: number;
+  players: Record<string, GamePlayerState>;
+  lastRoll: [number, number] | null;
+  lastRollWasDoubles: boolean;
+  pendingDecision: PendingPurchase | null;
+  /** Dev-panel override: if set, the next rollDice() call uses this instead of a random roll, then clears it. */
+  forcedRoll: [number, number] | null;
+  /** Recent event descriptions, newest last, capped for display. */
+  log: string[];
+}

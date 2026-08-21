@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import './App.css';
-import Lobby from './components/Lobby';
+import RoomView from './components/RoomView';
 import { createRoom, joinRoom } from './lib/rooms';
 import {
   getOrCreatePlayerId,
@@ -71,7 +71,7 @@ function App() {
   }
 
   if (view === 'lobby') {
-    return <Lobby roomCode={activeRoomCode} playerId={playerId} />;
+    return <RoomView roomCode={activeRoomCode} playerId={playerId} />;
   }
 
   return (

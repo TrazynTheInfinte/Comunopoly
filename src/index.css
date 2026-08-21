@@ -68,3 +68,14 @@ button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-grey);
+}

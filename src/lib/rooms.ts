@@ -42,6 +42,7 @@ export async function createRoom(
       await setDoc(doc(db, 'rooms', code), {
         code,
         createdAt: serverTimestamp(),
+        hostId: playerId,
         players: {
           [playerId]: { name: playerName, joinedAt: serverTimestamp() },
         },
