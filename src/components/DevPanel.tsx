@@ -35,7 +35,13 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
         <p>Set player roubles</p>
         {game.turnOrder.map((id) => (
           <div key={id} className="dev-panel-row">
-            <label>{room.players[id]?.name}</label>
+            <label>
+              {room.players[id]?.name}
+              {/* Only meaningful while a Fourth International is active -
+                  isTrotsky is stale/irrelevant once it resolves. */}
+              {game.trotskyHidingSpot !== null &&
+                ` (${game.players[id].isTrotsky ? 'Trotsky' : 'Notsky'})`}
+            </label>
             <input
               type="number"
               defaultValue={game.players[id].roubles}
