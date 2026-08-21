@@ -9,6 +9,7 @@ import {
   callShowTrial,
   castShowTrialVote,
   chooseCard,
+  chooseEndgameTarget,
   chooseNewPiece,
   createInitialGameState,
   declineVolgaOffer,
@@ -32,7 +33,8 @@ import {
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import { getTile } from '../data/board';
-import type { GameState } from '../types/game';
+import { STARTING_PIECES } from '../data/pieces';
+import type { EndgameState, GameState } from '../types/game';
 
 const PLAYERS = [
   { playerId: 'p1', pieceId: 'boot' as const },
@@ -2462,5 +2464,389 @@ describe('Disappear and the Piece Pool', () => {
     state = endTurn(state);
 
     expect(state.turnOrder[state.currentTurnIndex]).toBe('p3'); // skipped p2 entirely
+  });
+});
+
+/** Test helper: jumps straight into "everyone's had their final turn except this one player" so a single endTurn() triggers scoring (or the target-choice phase) without needing to actually play out a full final lap. */
+function triggerEndgame(state: GameState, lastRemainingPlayerId: string): GameState {
+  const endgame: EndgameState = {
+    finalLapRemaining: [lastRemainingPlayerId],
+    pendingTargetChoices: [],
+    targetChoices: {},
+    results: null,
+  };
+  return { ...state, endgame };
+}
+
+describe('Endgame trigger (the Piece Pool running dry)', () => {
+  it('starts the final lap the moment a Disappeared player claims the last available Piece', () => {
+    let state = createInitialGameState(PLAYERS); // p1 boot, p2 battleship
+    state = {
+      ...state,
+      retiredPieceIds: ['iron', 'thimble', 'dog', 'wheelBarrel', 'hat', 'penguin', 'cat', 'rubberDuck', 'trex'],
+    };
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+    state = rollDice(state); // p1 Disappears - exactly one Piece ('car') left in the Pool
+
+    expect(state.pendingPieceChoices).toEqual(['p1']);
+    expect(state.endgame).toBeNull();
+
+    state = chooseNewPiece(state, 'p1', 'car');
+
+    expect(state.endgame).not.toBeNull();
+    expect(state.endgame?.finalLapRemaining).toEqual(['p1', 'p2']);
+    expect(state.endgame?.results).toBeNull();
+  });
+
+  it('a room that fills every Piece at creation starts the Endgame immediately', () => {
+    const players = STARTING_PIECES.map((piece, index) => ({
+      playerId: `p${index + 1}`,
+      pieceId: piece.id,
+    }));
+
+    const state = createInitialGameState(players);
+
+    expect(state.endgame).not.toBeNull();
+    expect(state.endgame?.finalLapRemaining).toHaveLength(12);
+  });
+
+  it('pops players off the final-lap list as their turns end, computing Scores once empty', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null },
+    };
+
+    state = endTurn(state); // p1's turn ends
+    expect(state.endgame?.finalLapRemaining).toEqual(['p2']);
+    expect(state.endgame?.results).toBeNull();
+
+    state = endTurn(state); // p2's turn ends
+    expect(state.endgame?.finalLapRemaining).toEqual([]);
+    expect(state.endgame?.results).not.toBeNull(); // neither piece needs a target
+  });
+
+  it('rollDice refuses to run once Scores are in', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      endgame: { finalLapRemaining: [], pendingTargetChoices: [], targetChoices: {}, results: { p1: 10, p2: 5 } },
+    };
+
+    expect(rollDice(state)).toBe(state);
+  });
+
+  it('a player who Disappears mid-final-lap (into permanent spectating) is pulled off the list instead of leaving the game stuck', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      retiredPieceIds: ['car', 'iron', 'thimble', 'dog', 'wheelBarrel', 'hat', 'penguin', 'cat', 'rubberDuck', 'trex'],
+      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null },
+    };
+    state = devSetForcedCard(state, 'accident');
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [3, 4]);
+
+    state = rollDice(state); // p1 Disappears with nothing left in the Pool
+
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.endgame?.finalLapRemaining).toEqual(['p2']);
+  });
+});
+
+describe('Endgame Win Condition scoring', () => {
+  it('Boot: (roubles x properties) / (active players + 1)', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 900, ownedTileIds: [1, 3, 6] } },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(900); // 900 * 3 / (2 + 1)
+    expect(state.endgame?.results?.p2).toBe(0);
+  });
+
+  it('Battleship: roubles x house count (a hotel counts as 4 houses)', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'battleship' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 10, ownedTileIds: [1, 3] } },
+      propertyHouses: { 1: 3, 3: 5 }, // 3 houses + a hotel (4) = 7
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(70);
+  });
+
+  it('Car: West roubles x hotel count', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'car' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, westRoubles: 50, ownedTileIds: [1, 3] } },
+      propertyHouses: { 1: 5, 3: 5 }, // 2 hotels
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(100);
+  });
+
+  it('Dog: half of West roubles', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'dog' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, westRoubles: 101 } } };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(50);
+  });
+
+  it('Wheel Barrel: West roubles x number of properties', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'wheelBarrel' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, westRoubles: 10, ownedTileIds: [1, 3, 5] } },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(30);
+  });
+
+  it('Rubber duck: jailed-count x number of properties', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'rubberDuck' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, sentToJailCount: 3, ownedTileIds: [1, 3] } },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(6);
+  });
+
+  it('sentToJailCount only increments when Rubber duck actually jails someone', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'rubberDuck' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+    ]);
+    state = { ...state, rubberDuckEncounter: { rubberDuckPlayerId: 'p1', targetPlayerId: 'p2' } };
+    state = resolveRubberDuckEncounter(state, true);
+    expect(state.players.p1.sentToJailCount).toBe(1);
+
+    state = { ...state, rubberDuckEncounter: { rubberDuckPlayerId: 'p1', targetPlayerId: 'p2' } };
+    state = resolveRubberDuckEncounter(state, false);
+    expect(state.players.p1.sentToJailCount).toBe(1); // unchanged - declined
+  });
+
+  it("T-Rex: gives away roubles evenly, docks the remainder from their own Score, scores others-shared x seized properties", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'trex' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+      { playerId: 'p3', pieceId: 'battleship' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 100, ownedTileIds: [1, 3, 5] }, // 3 seized properties
+        p2: { ...state.players.p2, roubles: 0, ownedTileIds: [] }, // Boot's own formula stays 0 (no properties)
+        p3: { ...state.players.p3, roubles: 0, ownedTileIds: [] }, // Battleship's own formula stays 0 (no houses)
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    // 100 roubles / 2 others = 50 each, no remainder. Score = 2 * 3 - 0 = 6
+    expect(state.endgame?.results?.p1).toBe(6);
+  });
+
+  it('T-Rex: an uneven split docks the remainder from their own Score', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'trex' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+      { playerId: 'p3', pieceId: 'boot' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 101, ownedTileIds: [1] }, // 1 seized property
+        p2: { ...state.players.p2, ownedTileIds: [] },
+        p3: { ...state.players.p3, ownedTileIds: [] },
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    // 101 / 2 = 50 each, remainder 1. Score = 2*1 - 1 = 1
+    expect(state.endgame?.results?.p1).toBe(1);
+  });
+
+  it("T-Rex's giveaway actually reaches the other players' hand, feeding Boot's own formula", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'trex' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 200, ownedTileIds: [] },
+        p2: { ...state.players.p2, roubles: 0, ownedTileIds: [1] },
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    // p2 receives all 200 (the only other player), then Boot: floor(200 * 1 / 3)
+    expect(state.endgame?.results?.p2).toBe(Math.floor(200 / 3));
+  });
+
+  it("Penguin: target's Score is locked at 0, Penguin gets what the target's own formula would have scored", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'penguin' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+    ]);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, westRoubles: 40 } } };
+    state = endTurn(triggerEndgame(state, 'p1'));
+    expect(state.endgame?.pendingTargetChoices).toEqual(['p1']);
+
+    state = chooseEndgameTarget(state, 'p1', 'p2');
+
+    expect(state.endgame?.results?.p2).toBe(0);
+    expect(state.endgame?.results?.p1).toBe(20); // Dog's own formula: floor(40 / 2)
+  });
+
+  it('Penguin: rejects targeting self, still scores off a valid later choice', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'penguin' as const },
+      { playerId: 'p2', pieceId: 'hat' as const },
+    ]);
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    state = chooseEndgameTarget(state, 'p1', 'p1'); // rejected
+    expect(state.endgame?.pendingTargetChoices).toEqual(['p1']);
+
+    state = chooseEndgameTarget(state, 'p1', 'p2');
+    expect(state.endgame?.results?.p1).toBe(0); // Hat's own formula is 0 anyway
+  });
+
+  it("Iron: target's Score becomes Iron's Roubles-in-hand, Iron gets half their own Roubles", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'iron' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 300 },
+        p2: { ...state.players.p2, westRoubles: 1000 }, // would otherwise score 500
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+    state = chooseEndgameTarget(state, 'p1', 'p2');
+
+    expect(state.endgame?.results?.p2).toBe(300); // replaced entirely
+    expect(state.endgame?.results?.p1).toBe(150); // half of Iron's own roubles
+  });
+
+  it("Thimble: deducts their Roubles from a target's Score - a negative result becomes Thimble's own (positive) Score", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'thimble' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 150 },
+        p2: { ...state.players.p2, westRoubles: 200 }, // own formula: 100
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+    state = chooseEndgameTarget(state, 'p1', 'p2');
+
+    expect(state.endgame?.results?.p2).toBe(-50); // 100 - 150, stays negative
+    expect(state.endgame?.results?.p1).toBe(50); // positive mirror
+  });
+
+  it("Thimble: scores zero if the deduction doesn't go negative", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'thimble' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 50 },
+        p2: { ...state.players.p2, westRoubles: 200 }, // own formula: 100
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+    state = chooseEndgameTarget(state, 'p1', 'p2');
+
+    expect(state.endgame?.results?.p2).toBe(50); // 100 - 50, stays positive
+    expect(state.endgame?.results?.p1).toBe(0);
+  });
+
+  it('Cat: scores 0, then everyone rotates Score clockwise by board position', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'cat' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+      { playerId: 'p3', pieceId: 'wheelBarrel' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, position: 10 },
+        p2: { ...state.players.p2, position: 5, westRoubles: 100 }, // own score 50
+        p3: { ...state.players.p3, position: 20, westRoubles: 10, ownedTileIds: [1] }, // own score 10
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    // Ascending board position: p2(5) -> p1(10) -> p3(20) -> wraps to p2.
+    // Pre-rotation scores: p1=0 (Cat), p2=50, p3=10. Each moves to the next.
+    expect(state.endgame?.results?.p1).toBe(50); // received from p2
+    expect(state.endgame?.results?.p2).toBe(10); // received from p3 (wraps around)
+    expect(state.endgame?.results?.p3).toBe(0); // received from p1 (Cat's own 0)
+  });
+
+  it('permanently spectating players score nothing and cannot be chosen as a target', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'penguin' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+      { playerId: 'p3', pieceId: 'hat' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p2: { ...state.players.p2, isSpectating: true, westRoubles: 999 } },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    state = chooseEndgameTarget(state, 'p1', 'p2'); // rejected - spectating
+    expect(state.endgame?.pendingTargetChoices).toEqual(['p1']);
+
+    state = chooseEndgameTarget(state, 'p1', 'p3');
+    expect(state.endgame?.results?.p2).toBeUndefined();
+    expect(state.endgame?.results?.p1).toBe(0);
+    expect(state.endgame?.results?.p3).toBe(0);
   });
 });

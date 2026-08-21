@@ -142,6 +142,8 @@ export interface GamePlayerState {
   pendingWestRoubles: number;
   /** Permanently out of the game (Disappeared after the Piece Pool ran dry, so there was no replacement Piece left to take) - keeps their seat and can watch, but is skipped in turn order forever and scores nothing at Endgame. */
   isSpectating: boolean;
+  /** Times this player has used Rubber duck's power to actually send someone to jail (not other jailing mechanics) - feeds Rubber duck's Win Condition. */
+  sentToJailCount: number;
 }
 
 /**
@@ -248,6 +250,16 @@ export interface GameState {
    * their "turn" just waits on the picker instead of silently skipping.
    */
   pendingPieceChoices: string[];
+  /**
+   * Null during normal play. Set the instant the Piece Pool is fully
+   * exhausted (every one of the 12 Piece IDs is either retired or held -
+   * in practice, almost always the moment a Disappeared player picks the
+   * very last available Piece). From then on the game is winding down:
+   * everyone still active gets exactly one more turn, then whichever
+   * Pieces need a target (Iron, Thimble, Penguin) pick one, then Scores
+   * are computed once and for all - see computeEndgameScores.
+   */
+  endgame: EndgameState | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
 }
@@ -257,4 +269,15 @@ export interface ShowTrialVote {
   callerId: string;
   targetPlayerId: string;
   votes: Record<string, 'release' | 'disappear'>;
+}
+
+export interface EndgameState {
+  /** Active (non-spectating) player IDs who still owe their "one more turn" before Scores can be computed. Popped as each one completes endTurn; a player who Disappears mid-final-lap (always into spectating, since the Pool is already exhausted by definition here) is pulled out instead of ever finishing theirs. */
+  finalLapRemaining: string[];
+  /** Iron/Thimble/Penguin players (whichever are in this game and still active) who need to pick a target before Scores can be computed - queued the instant finalLapRemaining empties. Empty (and skipped straight to results) if none of those three Pieces are in play. */
+  pendingTargetChoices: string[];
+  /** Resolved target choices, keyed by the choosing player's ID. */
+  targetChoices: Record<string, string>;
+  /** Final computed Scores once every needed target choice is in, keyed by player ID. Null until then - its presence is what actually ends the game (see GameBoard/EndgameResultsScreen). */
+  results: Record<string, number> | null;
 }

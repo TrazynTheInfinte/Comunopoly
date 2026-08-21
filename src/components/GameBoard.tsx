@@ -17,6 +17,8 @@ import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
 import CatRedirectPrompt from './CatRedirectPrompt';
 import DevPanel from './DevPanel';
+import EndgameResultsScreen from './EndgameResultsScreen';
+import EndgameTargetPrompt from './EndgameTargetPrompt';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
 import PieceChoicePrompt from './PieceChoicePrompt';
@@ -49,6 +51,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   // satisfy it (and to bail out safely if it's ever wrong).
   if (!game) return null;
 
+  if (game.endgame?.results) {
+    return <EndgameResultsScreen room={room} game={game} />;
+  }
+
   const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];
   const isMyTurn = currentTurnPlayerId === playerId;
   const pendingTile =
@@ -61,6 +67,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       : null;
   const me = game.players[playerId];
   const myPendingPieceChoice = game.pendingPieceChoices.includes(playerId);
+  const myPendingEndgameTarget = game.endgame?.pendingTargetChoices.includes(playerId) ?? false;
   const canAccuseOfTrotsky =
     isMyTurn && game.trotskyHidingSpot !== null && me?.position === game.trotskyHidingSpot;
   const accusableOthers = game.turnOrder.filter((id) => id !== playerId);
@@ -103,6 +110,13 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
             to jail instead.
           </p>
         )}
+        {game.endgame && !game.endgame.results && (
+          <p className="trotsky-banner">
+            {game.endgame.pendingTargetChoices.length > 0
+              ? "The Piece Pool is empty - everyone's had their final turn. Waiting on Endgame targets."
+              : 'The Piece Pool is empty - everyone gets one more turn before the Endgame.'}
+          </p>
+        )}
       </section>
 
       <ul className="player-summary">
@@ -130,6 +144,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
       {myPendingPieceChoice && (
         <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
+      )}
+
+      {myPendingEndgameTarget && (
+        <EndgameTargetPrompt playerId={playerId} room={room} roomCode={roomCode} game={game} />
       )}
 
       {isMyTurn && !myPendingPieceChoice && !game.pendingDecision && (

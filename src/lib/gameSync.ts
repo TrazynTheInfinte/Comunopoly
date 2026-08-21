@@ -11,6 +11,7 @@ import {
   callShowTrial,
   castShowTrialVote,
   chooseCard,
+  chooseEndgameTarget,
   chooseNewPiece,
   createInitialGameState,
   declineVolgaOffer,
@@ -230,6 +231,15 @@ export async function chooseNewPieceAndSync(
   pieceId: PieceId,
 ) {
   await writeGameState(roomCode, chooseNewPiece(game, playerId, pieceId));
+}
+
+export async function chooseEndgameTargetAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+  targetPlayerId: string,
+) {
+  await writeGameState(roomCode, chooseEndgameTarget(game, playerId, targetPlayerId));
 }
 
 export async function devDrawCardAndSync(

@@ -6,7 +6,7 @@ import {
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
 import { STARTING_PIECES } from '../data/pieces';
-import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId } from '../types/game';
+import type { CardDeck, ColorGroup, EndgameState, GameState, GamePlayerState, PieceId } from '../types/game';
 
 const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
 
@@ -71,10 +71,11 @@ export function createInitialGameState(
       westRoubles: 0,
       pendingWestRoubles: 0,
       isSpectating: false,
+      sentToJailCount: 0,
     };
   }
 
-  return {
+  const initialState: GameState = {
     turnOrder: playerAssignments.map((p) => p.playerId),
     currentTurnIndex: 0,
     players,
@@ -104,8 +105,237 @@ export function createInitialGameState(
     mortgagedTileIds: [],
     retiredPieceIds: [],
     pendingPieceChoices: [],
+    endgame: null,
     log: ['The game begins.'],
   };
+
+  // Degenerate edge case: a full 12-player room claims every Piece right
+  // at the start, with nothing left in the Pool from turn one.
+  return checkEndgameTrigger(initialState);
+}
+
+/** True once every one of the 12 Piece IDs is accounted for - either permanently retired, or currently held by an active player. That's the Piece Pool running dry, which is what starts the Endgame. */
+function isPoolExhausted(state: GameState): boolean {
+  const everClaimed = new Set(state.retiredPieceIds);
+  for (const player of Object.values(state.players)) {
+    if (!player.isSpectating) everClaimed.add(player.pieceId);
+  }
+  return everClaimed.size >= ALL_PIECE_IDS.length;
+}
+
+/**
+ * Called after anything that could exhaust the Piece Pool (a fresh game
+ * claiming every Piece immediately, or a Disappeared player picking the
+ * last one available). If the Pool just ran dry and the Endgame hasn't
+ * already started, kicks it off: every active player gets exactly one
+ * more turn, starting with whoever's turn it currently is.
+ */
+function checkEndgameTrigger(state: GameState): GameState {
+  if (state.endgame || !isPoolExhausted(state)) return state;
+
+  const activeIds = state.turnOrder.filter((id) => !state.players[id].isSpectating);
+  // Rotate so the current player is first - their turn (in progress or
+  // about to start) counts as their "one more turn," not an extra one.
+  const startIndex = activeIds.indexOf(state.turnOrder[state.currentTurnIndex]);
+  const finalLapRemaining =
+    startIndex === -1
+      ? activeIds
+      : [...activeIds.slice(startIndex), ...activeIds.slice(0, startIndex)];
+
+  return logEvent(
+    {
+      ...state,
+      endgame: { finalLapRemaining, pendingTargetChoices: [], targetChoices: {}, results: null },
+    },
+    'The Piece Pool is empty - the Endgame begins. Everyone gets one more turn.',
+  );
+}
+
+/** Pops a player off the Endgame's final-lap list (their one more turn is done, one way or another), kicking off target-choices/scoring once nobody's left owing one. A no-op outside the final lap, once Scores are already in, or for a player who wasn't on the list. */
+function removeFromFinalLap(state: GameState, playerId: string): GameState {
+  if (!state.endgame || state.endgame.results !== null) return state;
+  if (!state.endgame.finalLapRemaining.includes(playerId)) return state;
+
+  const remaining = state.endgame.finalLapRemaining.filter((id) => id !== playerId);
+  const next: GameState = { ...state, endgame: { ...state.endgame, finalLapRemaining: remaining } };
+  return remaining.length === 0 ? beginEndgameTargetPhase(next) : next;
+}
+
+/** Once everyone's had their final turn: Iron/Thimble/Penguin (whichever are still in play) need to pick a target before Scores can be computed. Skips straight to computeEndgameScores if none of those three Pieces are around. */
+function beginEndgameTargetPhase(state: GameState): GameState {
+  if (!state.endgame) return state;
+  const needsTarget = state.turnOrder.filter(
+    (id) =>
+      !state.players[id].isSpectating &&
+      (['iron', 'thimble', 'penguin'] as PieceId[]).includes(state.players[id].pieceId),
+  );
+  if (needsTarget.length === 0) return computeEndgameScores(state);
+  return logEvent(
+    { ...state, endgame: { ...state.endgame, pendingTargetChoices: needsTarget } },
+    "Everyone's had their final turn - choose your Endgame targets.",
+  );
+}
+
+/**
+ * Computes every active player's final Score, in the order the Pieces'
+ * texts demand: Penguin's swap first (their target is locked at 0 and
+ * never gets their own formula run at all), then T-Rex's giveaway
+ * (changes other players' actual Roubles-in-hand, which Boot/
+ * Battleship's formulas read), then everyone else's own formula off
+ * those updated numbers, then Iron's transfer, then Thimble's (an
+ * arbitrary but deterministic order if both are in the same game), and
+ * finally Cat's clockwise rotation over the fully-resolved numbers.
+ * Permanently-spectating players never participate, as source or
+ * target, per CONTEXT.md's Endgame note.
+ */
+function computeEndgameScores(state: GameState): GameState {
+  if (!state.endgame) return state;
+  const activeIds = state.turnOrder.filter((id) => !state.players[id].isSpectating);
+  const targets = state.endgame.targetChoices;
+  const pieceOf = (id: string) => state.players[id].pieceId;
+  const findByPiece = (pieceId: PieceId) => activeIds.find((id) => pieceOf(id) === pieceId);
+
+  // T-Rex's giveaway changes other players' actual hand, so it has to
+  // happen before anything reads "money in hand."
+  const roubles: Record<string, number> = {};
+  for (const id of activeIds) roubles[id] = state.players[id].roubles;
+
+  const scores: Record<string, number> = {};
+  const penguinId = findByPiece('penguin');
+  const penguinTargetId =
+    penguinId && targets[penguinId] && activeIds.includes(targets[penguinId]) && targets[penguinId] !== penguinId
+      ? targets[penguinId]
+      : null;
+
+  const trexId = findByPiece('trex');
+  if (trexId) {
+    const others = activeIds.filter((id) => id !== trexId);
+    if (others.length > 0) {
+      const share = Math.floor(roubles[trexId] / others.length);
+      const remainder = roubles[trexId] - share * others.length;
+      for (const id of others) roubles[id] += share;
+      const seized = state.players[trexId].ownedTileIds.length;
+      scores[trexId] = others.length * seized - remainder;
+    } else {
+      scores[trexId] = 0;
+    }
+    roubles[trexId] = 0;
+  }
+
+  const houseCountOf = (id: string) =>
+    state.players[id].ownedTileIds.reduce((sum, tileId) => {
+      const houses = state.propertyHouses[tileId] ?? 0;
+      return sum + (houses === 5 ? 4 : houses);
+    }, 0);
+  const hotelCountOf = (id: string) =>
+    state.players[id].ownedTileIds.filter((tileId) => state.propertyHouses[tileId] === 5).length;
+
+  // Each Piece's own formula, run off the (possibly T-Rex-adjusted)
+  // Roubles - covers everyone except Iron/Thimble (transfers, below),
+  // Penguin (needs its target's hypothetical, below), Cat (always 0,
+  // then rotated, below), and T-Rex (already computed above).
+  const baseScoreFor = (id: string): number => {
+    const player = state.players[id];
+    const properties = player.ownedTileIds.length;
+    switch (player.pieceId) {
+      case 'boot':
+        return Math.floor((roubles[id] * properties) / (activeIds.length + 1));
+      case 'battleship':
+        return roubles[id] * houseCountOf(id);
+      case 'car':
+        return player.westRoubles * hotelCountOf(id);
+      case 'dog':
+        return Math.floor(player.westRoubles / 2);
+      case 'wheelBarrel':
+        return player.westRoubles * properties;
+      case 'rubberDuck':
+        return player.sentToJailCount * properties;
+      default:
+        return 0; // hat scores 0 anyway; iron/thimble/penguin/cat/trex are handled elsewhere
+    }
+  };
+
+  for (const id of activeIds) {
+    if (id === trexId) continue;
+    const pieceId = pieceOf(id);
+    if (id === penguinTargetId || pieceId === 'cat' || pieceId === 'iron' || pieceId === 'thimble') {
+      scores[id] = 0; // locked at 0 (Penguin's target), or filled in below (Cat/Iron/Thimble)
+      continue;
+    }
+    scores[id] = baseScoreFor(id);
+  }
+
+  if (penguinId) {
+    scores[penguinId] = penguinTargetId ? baseScoreFor(penguinTargetId) : 0;
+  }
+
+  const ironId = findByPiece('iron');
+  if (ironId) {
+    const targetId = targets[ironId];
+    if (targetId && activeIds.includes(targetId) && targetId !== ironId) {
+      scores[targetId] = roubles[ironId];
+      scores[ironId] = Math.floor(roubles[ironId] / 2);
+    } else {
+      scores[ironId] = 0;
+    }
+  }
+  const thimbleId = findByPiece('thimble');
+  if (thimbleId) {
+    const targetId = targets[thimbleId];
+    if (targetId && activeIds.includes(targetId) && targetId !== thimbleId) {
+      const targetScore = (scores[targetId] ?? 0) - roubles[thimbleId];
+      scores[targetId] = targetScore;
+      scores[thimbleId] = targetScore < 0 ? -targetScore : 0;
+    } else {
+      scores[thimbleId] = 0;
+    }
+  }
+
+  // Cat's rotation - always last, clockwise by board position (ties
+  // broken by turn order for two players sharing a tile).
+  const catId = findByPiece('cat');
+  let finalScores = scores;
+  if (catId) {
+    finalScores = { ...scores, [catId]: 0 };
+    const ring = [...activeIds].sort((a, b) => {
+      const posDiff = state.players[a].position - state.players[b].position;
+      return posDiff !== 0 ? posDiff : state.turnOrder.indexOf(a) - state.turnOrder.indexOf(b);
+    });
+    const rotated: Record<string, number> = {};
+    for (let i = 0; i < ring.length; i++) {
+      rotated[ring[(i + 1) % ring.length]] = finalScores[ring[i]] ?? 0;
+    }
+    finalScores = rotated;
+  }
+
+  return logEvent(
+    { ...state, endgame: { ...state.endgame, pendingTargetChoices: [], results: finalScores } },
+    'Endgame! Final Scores are in.',
+  );
+}
+
+/**
+ * A Piece needing a target for the Endgame (Iron, Thimble, Penguin)
+ * picks who it affects. Always the choosing player's own call. Once
+ * every such Piece still in the game has chosen, Scores are computed.
+ */
+export function chooseEndgameTarget(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+): GameState {
+  if (!state.endgame || !state.endgame.pendingTargetChoices.includes(playerId)) return state;
+  if (targetPlayerId === playerId || !state.players[targetPlayerId] || state.players[targetPlayerId].isSpectating) {
+    return state;
+  }
+
+  const nextEndgame: EndgameState = {
+    ...state.endgame,
+    pendingTargetChoices: state.endgame.pendingTargetChoices.filter((id) => id !== playerId),
+    targetChoices: { ...state.endgame.targetChoices, [playerId]: targetPlayerId },
+  };
+  const next: GameState = { ...state, endgame: nextEndgame };
+  return nextEndgame.pendingTargetChoices.length === 0 ? computeEndgameScores(next) : next;
 }
 
 function rollTwoDice(rng: () => number): [number, number] {
@@ -296,6 +526,12 @@ function disappearPlayer(
       ...next,
       players: { ...next.players, [playerId]: { ...next.players[playerId], isSpectating: true } },
     };
+    // If this happens during the Endgame's final lap (the only way it
+    // can happen mid-game, since the Pool only ever runs dry once - see
+    // checkEndgameTrigger), this player will never finish a turn again,
+    // so pull them off the "everyone gets one more turn" list instead of
+    // leaving the game waiting on them forever.
+    next = removeFromFinalLap(next, playerId);
     return logEvent(
       next,
       `Disappeared (${reason}). No Pieces left in the Piece Pool - permanently out, spectating the rest of the match.`,
@@ -1325,6 +1561,7 @@ export function rollDice(
   state: GameState,
   rng: () => number = Math.random,
 ): GameState {
+  if (state.endgame?.results) return state; // game's over - Scores are in
   const playerId = currentPlayerId(state);
   if (state.pendingPieceChoices.includes(playerId)) return state; // must pick a new Piece first
   const player = state.players[playerId];
@@ -1630,12 +1867,23 @@ export function answerNkvdQuiz(state: GameState, answerText: string): GameState 
 /** Resolves Rubber duck's jail-offer: sends the co-located player to jail if `sendToJailChoice` is true, otherwise just dismisses it. */
 export function resolveRubberDuckEncounter(state: GameState, sendToJailChoice: boolean): GameState {
   if (!state.rubberDuckEncounter) return state;
-  const { targetPlayerId } = state.rubberDuckEncounter;
+  const { rubberDuckPlayerId, targetPlayerId } = state.rubberDuckEncounter;
   const next: GameState = { ...state, rubberDuckEncounter: null };
   if (!sendToJailChoice) {
     return logEvent(next, 'Chose not to send them to jail.');
   }
-  return logEvent(sendToJail(next, targetPlayerId), "Sent them to jail (Stalin's body-double).");
+  const jailed = sendToJail(next, targetPlayerId);
+  const withCount: GameState = {
+    ...jailed,
+    players: {
+      ...jailed.players,
+      [rubberDuckPlayerId]: {
+        ...jailed.players[rubberDuckPlayerId],
+        sentToJailCount: jailed.players[rubberDuckPlayerId].sentToJailCount + 1,
+      },
+    },
+  };
+  return logEvent(withCount, "Sent them to jail (Stalin's body-double).");
 }
 
 /** The Piece IDs `playerId` can currently pick from - not held by anyone else active, and never permanently retired. Exposed for the UI's picker (name-only, per the design - power/win condition stay hidden same as Beginner-mode's initial pick). */
@@ -1689,7 +1937,7 @@ export function chooseNewPiece(state: GameState, playerId: string, pieceId: Piec
     },
   };
   const name = STARTING_PIECES.find((p) => p.id === pieceId)?.name ?? pieceId;
-  return logEvent(next, `Picked a new Piece: ${name}.`);
+  return checkEndgameTrigger(logEvent(next, `Picked a new Piece: ${name}.`));
 }
 
 /**
@@ -1894,6 +2142,15 @@ export function endTurn(state: GameState): GameState {
         [endingPlayerId]: { ...endingPlayer, extraTurns: endingPlayer.extraTurns - 1 },
       },
     };
+    return { ...next, lastRoll: null, lastRollWasDoubles: false, doublesCount: 0 };
+  }
+
+  // Endgame's final lap: this player's turn is genuinely over now (not
+  // just paused for more Party Vanguard turns), so their "one more turn"
+  // is done. If that was the last one owed, this may kick straight into
+  // target-choices or, if no Piece needs one, Scores themselves.
+  next = removeFromFinalLap(next, endingPlayerId);
+  if (next.endgame?.results) {
     return { ...next, lastRoll: null, lastRollWasDoubles: false, doublesCount: 0 };
   }
 
