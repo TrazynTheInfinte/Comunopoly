@@ -90,14 +90,14 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
   return (
     <main className="game-board">
+      {me && <PieceInfoPanel pieceId={me.pieceId} />}
+
       <p className="turn-indicator">
         {isMyTurn ? 'Your turn' : `${room.players[currentTurnPlayerId]?.name}'s turn`}
       </p>
 
       <div className="board-layout">
         <aside className="side-panel">
-          {me && <PieceInfoPanel pieceId={me.pieceId} />}
-
           <section className="game-status">
             {game.lastRoll && (
               <p className="dice-result">
