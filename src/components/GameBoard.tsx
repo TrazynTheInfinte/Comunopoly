@@ -53,6 +53,11 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
   const [rollTrigger, setRollTrigger] = useState(0);
+  // Only consulted below a screen-width breakpoint (see GameBoard.css) -
+  // above it, CSS shows every section regardless of this and the tab
+  // buttons themselves stay hidden, so this state is simply inert on a
+  // wide screen rather than needing its own "are we on mobile" check.
+  const [mobileTab, setMobileTab] = useState<'board' | 'status'>('board');
   // Delays revealing anything about a state update besides the mover's
   // token walking there, so a card that Disappears the drawer (or any
   // other landing effect) doesn't seem to happen before their piece has
@@ -114,9 +119,31 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         {isMyTurn ? 'Your turn' : `${room.players[currentTurnPlayerId]?.name}'s turn`}
       </p>
 
-      <div className="board-layout">
-        <aside className="side-panel">
-          <section className="game-status">
+      <div className="board-layout" data-mobile-tab={mobileTab}>
+        {/* Only shown below the mobile breakpoint (see GameBoard.css) -
+            switches which of the two tab groups below is visible.
+            layout-actions is in neither group, so whatever needs a
+            response (Roll Dice, a card reveal, a vote) stays reachable
+            no matter which tab is active. */}
+        <div className="mobile-tabs">
+          <button
+            type="button"
+            className={mobileTab === 'board' ? 'is-active' : ''}
+            onClick={() => setMobileTab('board')}
+          >
+            Board
+          </button>
+          <button
+            type="button"
+            className={mobileTab === 'status' ? 'is-active' : ''}
+            onClick={() => setMobileTab('status')}
+          >
+            Status
+          </button>
+        </div>
+
+        <section className="layout-status">
+          <div className="game-status">
             {game.lastRoll && (
               <p className="dice-result">
                 {game.lastRoll[1] === 0
@@ -138,7 +165,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
                   : 'The Piece Pool is empty - everyone gets one more turn before the Endgame.'}
               </p>
             )}
-          </section>
+          </div>
 
           <ul className="player-summary">
             {game.turnOrder.map((id) => {
@@ -174,7 +201,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
               );
             })}
           </ul>
+        </section>
 
+        <section className="layout-actions">
           {myPendingPieceChoice && (
             <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
           )}
@@ -297,7 +326,9 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           )}
 
           <ShowTrialVoteBanner room={room} roomCode={roomCode} playerId={playerId} game={game} />
+        </section>
 
+        <section className="layout-log">
           <ul className="event-log">
             {game.log
               .slice()
@@ -314,13 +345,13 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           />
 
           {isDevPanelUnlocked && <DevPanel room={room} roomCode={roomCode} game={game} />}
-        </aside>
+        </section>
 
-        <div className="board-column">
+        <div className="board-column layout-board">
           <Board room={room} roomCode={roomCode} playerId={playerId} game={game} />
         </div>
 
-        <div className="dice-column">
+        <div className="dice-column layout-dice">
           {/* Live, not staged - the dice should start tumbling the
               instant a roll happens, not wait for the token's walk to
               finish revealing everything else. */}

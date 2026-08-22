@@ -19,21 +19,49 @@
   text-align: center;
 }
 
-/* Side panel (status/actions/prompts/log/dev panel) fixed to the left in
-   its own column; the board gets the middle column and centers itself
-   within it; the dice roller takes the third column, matching the
-   sidebar's width so the middle column (and the board inside it) still
-   lands on the true horizontal center of the screen. Falls back to
-   stacking (side panel, then board, then dice) once there's no room for
-   all three side by side. */
+/* Named grid areas rather than DOM order, so the exact same five
+   sections (status/actions/log/board/dice) can be rearranged wholesale
+   between the desktop 3-column layout and the mobile tabbed one below,
+   without duplicating any of them in the JSX. The sidebar column is
+   itself split into three separate areas (status/actions/log) stacked
+   in that order, purely so "actions" - the one part that always has to
+   stay reachable - can be repositioned independently of the other two
+   on mobile; on desktop all three just land in their old positions. */
 .board-layout {
   display: grid;
   grid-template-columns: 340px 1fr 340px;
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    'status  board dice'
+    'actions board dice'
+    'log     board dice';
   gap: 1.5rem;
   align-items: start;
 }
 
+.layout-status,
+.layout-actions,
+.layout-log {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.layout-status {
+  grid-area: status;
+}
+
+.layout-actions {
+  grid-area: actions;
+}
+
+.layout-log {
+  grid-area: log;
+}
+
 .board-column {
+  grid-area: board;
   display: flex;
   justify-content: center;
 }
@@ -42,14 +70,8 @@
   max-width: 760px;
 }
 
-.side-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-width: 0;
-}
-
 .dice-column {
+  grid-area: dice;
   min-width: 0;
   /* Clears the fixed-position piece info panel floating over the
      top-right corner of the page. That panel's height isn't fixed - it
@@ -60,9 +82,59 @@
   margin-top: 15rem;
 }
 
+/* Tab switcher for the mobile layout below - stays hidden (and its
+   state inert) above the breakpoint, where every section is shown at
+   once regardless of which tab is "active". */
+.mobile-tabs {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .board-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-template-areas:
+      'tabs'
+      'actions'
+      'board'
+      'dice'
+      'status'
+      'log';
+  }
+
+  .dice-column {
+    /* The fixed piece-info panel this clears on desktop sits well
+       above the single mobile column instead of over it. */
+    margin-top: 0;
+  }
+
+  .mobile-tabs {
+    grid-area: tabs;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .mobile-tabs button {
+    flex: 1;
+  }
+
+  .mobile-tabs button:not(.is-active) {
+    background: var(--color-grey-light);
+    color: var(--color-black);
+  }
+
+  /* Board tab active: hide the status/log groups. Status tab active:
+     hide the board/dice groups. "actions" is in neither rule, so
+     whatever needs a response (Roll Dice, a card reveal, a vote) stays
+     visible no matter which tab is showing. */
+  .board-layout[data-mobile-tab='board'] .layout-status,
+  .board-layout[data-mobile-tab='board'] .layout-log {
+    display: none;
+  }
+
+  .board-layout[data-mobile-tab='status'] .board-column,
+  .board-layout[data-mobile-tab='status'] .dice-column {
+    display: none;
   }
 }
 

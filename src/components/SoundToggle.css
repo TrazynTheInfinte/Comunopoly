@@ -25,3 +25,17 @@
 .sound-volume input[type='range'] {
   width: 5rem;
 }
+
+@media (max-width: 480px) {
+  /* The button + volume slider together are too wide for a narrow
+     phone screen to hold on one fixed row - let them wrap instead of
+     overflowing off the right edge. */
+  .sound-toggle {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  .sound-volume input[type='range'] {
+    width: 3.5rem;
+  }
+}

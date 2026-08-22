@@ -39,3 +39,22 @@
 .piece-info-text {
   color: var(--color-black);
 }
+
+@media (max-width: 900px) {
+  /* Fixed-over-the-corner only works when there's a wide, mostly-empty
+     margin for it to float in (the desktop 3-column layout). Below the
+     breakpoint everything's full-width, so a fixed panel here would sit
+     on top of the turn indicator and the always-visible actions band
+     instead - drop it into normal flow at the very top of the page. */
+  .piece-info-panel {
+    position: static;
+    width: 100%;
+    box-sizing: border-box;
+    /* Clears the fixed Sound toggle in the top-left corner, which
+       would otherwise sit on top of this panel's first couple of
+       lines now that it's full-width instead of tucked in the corner
+       opposite it. */
+    margin-top: 2.75rem;
+    margin-bottom: 0.75rem;
+  }
+}
