@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { BOARD } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
 import type { BoardTile, GameState } from '../types/game';
@@ -95,6 +95,34 @@ function PosterStamp({ kind, style }: { kind: 'jail' | 'disappear'; style: CSSPr
   );
 }
 
+/** A small info bubble anchored over a specific tile - shared by the click-a-piece-for-owner popup and the tap-a-tile-for-its-full-name popup, since both are "a board-level overlay positioned by a tile's grid cell" (see gridPositionOf) rather than nested inside the tile itself, which would get clipped by the tile's own overflow:hidden. */
+function BoardPopup({
+  tileId,
+  onDismiss,
+  children,
+}: {
+  tileId: number;
+  onDismiss: () => void;
+  children: ReactNode;
+}) {
+  const { row, col } = gridPositionOf(tileId);
+  return (
+    <div
+      className="board-popup"
+      style={{
+        top: `${((row - 0.5) / 11) * 100}%`,
+        left: `${((col - 0.5) / 11) * 100}%`,
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onDismiss();
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /**
  * The actual 40-tile board, laid out as a physical Monopoly-style square
  * (not the plain text readout that's still shown below it for actions/
@@ -112,6 +140,10 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
   // work on touch devices at all, and works well enough on desktop that
   // it's kept alongside this as a bonus.
   const [openTokenId, setOpenTokenId] = useState<string | null>(null);
+  // A tile's full name, popped up on tap/click - names truncate to one
+  // line on narrow screens (see .tile-name in Board.css), so this is
+  // the way to actually read one that got cut off, on mobile or desktop.
+  const [openTileId, setOpenTileId] = useState<number | null>(null);
 
   const tokenColorFor = (id: string) => {
     const index = game.turnOrder.indexOf(id);
@@ -137,7 +169,13 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
   const flashKindByTileId = new Map(tileFlashes.map((flash) => [flash.tileId, flash.kind]));
 
   return (
-    <div className="board" onClick={() => setOpenTokenId(null)}>
+    <div
+      className="board"
+      onClick={() => {
+        setOpenTokenId(null);
+        setOpenTileId(null);
+      }}
+    >
       <div className="board-center">
         <div className="board-center-banner">COMMUNOPOLY</div>
         <button
@@ -180,6 +218,11 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
               gridColumn: col,
               ...(tile.kind === 'property' ? { '--group-color': `var(--group-${tile.colorGroup})` } : {}),
             } as CSSProperties}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenTokenId(null);
+              setOpenTileId((current) => (current === tile.id ? null : tile.id));
+            }}
           >
             {tile.kind === 'property' && <div className="tile-colorbar" />}
 
@@ -233,6 +276,7 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
                     title={`${room.players[id]?.name} (${pieceName(game.players[id].pieceId)})`}
                     onClick={(event) => {
                       event.stopPropagation();
+                      setOpenTileId(null);
                       setOpenTokenId((current) => (current === id ? null : id));
                     }}
                   >
@@ -260,23 +304,17 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
       })}
 
       {openTokenId && game.players[openTokenId] && (
-        (() => {
-          const { row, col } = gridPositionOf(game.players[openTokenId].position);
-          return (
-            <div
-              className="tile-token-owner"
-              style={{
-                top: `${((row - 0.5) / 11) * 100}%`,
-                left: `${((col - 0.5) / 11) * 100}%`,
-              }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {room.players[openTokenId]?.name}
-              <br />
-              {pieceName(game.players[openTokenId].pieceId)}
-            </div>
-          );
-        })()
+        <BoardPopup tileId={game.players[openTokenId].position} onDismiss={() => setOpenTokenId(null)}>
+          {room.players[openTokenId]?.name}
+          <br />
+          {pieceName(game.players[openTokenId].pieceId)}
+        </BoardPopup>
+      )}
+
+      {openTileId !== null && (
+        <BoardPopup tileId={openTileId} onDismiss={() => setOpenTileId(null)}>
+          {BOARD.find((t) => t.id === openTileId)?.name}
+        </BoardPopup>
       )}
     </div>
   );

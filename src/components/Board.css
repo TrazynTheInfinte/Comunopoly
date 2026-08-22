@@ -120,6 +120,7 @@
   overflow: hidden;
   min-width: 0;
   min-height: 0;
+  cursor: pointer;
 }
 
 .board-tile-corner {
@@ -141,39 +142,52 @@
 }
 
 .tile-icon {
-  width: 1.1em;
-  height: 1.1em;
+  /* clamp() instead of em - em was relative to the inherited root font
+     size, not the tile's own (much smaller, on a phone) size, so the
+     icon stayed full-size regardless of how small the board got and
+     ate most of a mobile tile's limited height, leaving no room for
+     the name below it to actually fit within its line-clamp. */
+  width: clamp(7px, 2.6vw, 15px);
+  height: clamp(7px, 2.6vw, 15px);
   color: var(--color-black);
   flex-shrink: 0;
 }
 
 .board-tile-corner .tile-icon {
-  width: 1.6em;
-  height: 1.6em;
+  width: clamp(11px, 4vw, 22px);
+  height: clamp(11px, 4vw, 22px);
 }
 
 .tile-name {
   /* clamp(), not a fixed size - a fixed size only looked right at
-     whatever viewport width it was last tuned against. Below the size
-     a name can be sensibly wrapped at 2 lines, the line-clamp below
-     truncates with an ellipsis instead of the raw overflow clipping
-     (which cropped both ends of the word, illegibly) that
-     .board-tile's own overflow:hidden was otherwise doing. */
+     whatever viewport width it was last tuned against. Single line,
+     not wrapped - a regular (non-corner) tile is too short on a phone
+     to fit an icon, a 2-line name, and the price all at once; letting
+     the name wrap just meant its second line got cut off by the
+     tile's own edge before the ellipsis could apply cleanly. Tap the
+     tile (see BoardPopup/openTileId in Board.tsx) to read the full
+     name if it's truncated here. */
   font-size: clamp(0.3rem, 1.6vw, 0.42rem);
   font-weight: 700;
   text-transform: uppercase;
   line-height: 1.05;
   letter-spacing: 0.01em;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Corner tiles are much bigger (they're a full square themselves,
+   same as any other tile, but hold far less other content - no price
+   row on most of them) - plenty of room for 2 lines. */
+.board-tile-corner .tile-name {
+  font-size: clamp(0.34rem, 1.9vw, 0.5rem);
+  white-space: normal;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
   word-break: break-word;
-}
-
-.board-tile-corner .tile-name {
-  font-size: clamp(0.34rem, 1.9vw, 0.5rem);
 }
 
 .tile-price {
@@ -432,12 +446,12 @@
   filter: drop-shadow(0 1px 0.5px rgba(17, 17, 17, 0.5));
 }
 
-/* Owner label for a tapped/clicked token - see the openTokenId state
-   in Board.tsx. Rendered as a sibling of the tile grid (like
-   PosterStamp) rather than nested inside the tile itself, since tiles
-   clip overflow and this needs to float above one, not be squeezed
-   inside its tiny box. */
-.tile-token-owner {
+/* Shared bubble for BoardPopup (a tapped/clicked token's owner, or a
+   tapped/clicked tile's full name) - see Board.tsx. Rendered as a
+   sibling of the tile grid (like PosterStamp) rather than nested
+   inside the tile itself, since tiles clip overflow and this needs to
+   float above one, not be squeezed inside its tiny box. */
+.board-popup {
   position: absolute;
   transform: translate(-50%, -160%);
   z-index: 15;
