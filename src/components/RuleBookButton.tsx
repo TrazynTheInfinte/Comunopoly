@@ -33,7 +33,7 @@ const SECTIONS: RuleBookSection[] = [
   {
     title: 'IV. Jail',
     body: [
-      "The Go To Jail tile, three doubles, an unpaid debt (Destitute), or any number of cards can land you behind bars. Buy your way out with a 100-Rouble Bribe at the end of every turn you're still inside, or roll doubles on your own turn and walk free.",
+      "The Go To Jail tile, three doubles, an unpaid debt (Destitute), or any number of cards can land you behind bars. Rolling doubles on your own turn is the only way to actually walk free. Until then, the guards don't work for nothing - a 100-Rouble Bribe every turn just to stay put and stay alive. Run out of Roubles to pay it and you Disappear instead.",
     ],
   },
   {
