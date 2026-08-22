@@ -4,6 +4,8 @@ import './DiceRoller.css';
 
 interface DiceRollerProps {
   game: GameState;
+  /** Bumped by GameBoard the instant the local player clicks Roll Dice - lets the tumble start immediately for them, without waiting on the Firestore round trip that a plain game.lastRoll diff would need. */
+  rollTrigger: number;
 }
 
 const ROLL_ANIMATION_MS = 600;
@@ -60,31 +62,42 @@ function DieFace({ value }: { value: number }) {
  * the staged/delayed version GameBoard otherwise renders), so the dice
  * start tumbling the instant a roll actually happens rather than
  * waiting for the token's walk to finish revealing everything else.
+ *
+ * Two separate things can start a tumble: the local player clicking
+ * Roll Dice (rollTrigger, immediate) and game.lastRoll actually
+ * changing once Firestore delivers the result (covers every other
+ * viewer, and re-confirms the real values for the roller too - whoever
+ * triggers it, the settle always uses whatever the latest live roll
+ * actually is, read fresh rather than captured in a stale closure).
  */
-function DiceRoller({ game }: DiceRollerProps) {
+function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
   const currentPlayerId = game.turnOrder[game.currentTurnIndex];
   const diceCount = game.players[currentPlayerId]?.pieceId === 'thimble' ? 1 : 2;
 
   const [isRolling, setIsRolling] = useState(false);
   const [displayValues, setDisplayValues] = useState<[number, number] | null>(game.lastRoll);
-  const prevRollRef = useRef(game.lastRoll);
+  const latestRollRef = useRef(game.lastRoll);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hasMountedRef = useRef(false);
+
+  // Always keep the latest live roll on hand, so the settle timeout
+  // below can read the real (current) value instead of whatever
+  // game.lastRoll happened to be when the tumble started.
+  useEffect(() => {
+    latestRollRef.current = game.lastRoll;
+  }, [game.lastRoll]);
 
   useEffect(() => {
-    const prevRoll = prevRollRef.current;
-    prevRollRef.current = game.lastRoll;
+    if (!hasMountedRef.current) {
+      // First render - nothing actually happened yet, just show
+      // whatever the game's current roll is (or idle dice).
+      hasMountedRef.current = true;
+      return;
+    }
 
     clearInterval(intervalRef.current);
     clearTimeout(timeoutRef.current);
-
-    if (game.lastRoll === prevRoll) return;
-
-    if (!game.lastRoll) {
-      setIsRolling(false);
-      setDisplayValues(null);
-      return;
-    }
 
     setIsRolling(true);
     intervalRef.current = setInterval(() => {
@@ -94,13 +107,16 @@ function DiceRoller({ game }: DiceRollerProps) {
       ]);
     }, ROLL_TICK_MS);
 
-    const finalRoll = game.lastRoll;
     timeoutRef.current = setTimeout(() => {
       clearInterval(intervalRef.current);
       setIsRolling(false);
-      setDisplayValues(finalRoll);
+      setDisplayValues(latestRollRef.current);
     }, ROLL_ANIMATION_MS);
-  }, [game.lastRoll, diceCount]);
+    // rollTrigger (a local click) and game.lastRoll (the real result
+    // landing) are two different signals that both mean "a roll just
+    // happened" - either should (re)start the tumble.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rollTrigger, game.lastRoll, diceCount]);
 
   useEffect(() => {
     return () => {

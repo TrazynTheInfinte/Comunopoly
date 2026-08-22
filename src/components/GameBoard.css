@@ -51,6 +51,10 @@
 
 .dice-column {
   min-width: 0;
+  /* Clears the fixed-position piece info panel floating over the
+     top-right corner of the page - without this, the dice roller's top
+     edge sits right underneath it. */
+  margin-top: 7rem;
 }
 
 @media (max-width: 900px) {

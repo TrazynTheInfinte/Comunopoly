@@ -48,6 +48,7 @@ function pieceName(pieceId: string): string {
 function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
+  const [rollTrigger, setRollTrigger] = useState(0);
   // Delays revealing anything about a state update besides the mover's
   // token walking there, so a card that Disappears the drawer (or any
   // other landing effect) doesn't seem to happen before their piece has
@@ -87,6 +88,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
   async function handleRoll() {
     setIsRolling(true);
+    setRollTrigger((n) => n + 1);
     try {
       await rollDiceAndSync(roomCode, game!);
     } finally {
@@ -293,7 +295,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
           {/* Live, not staged - the dice should start tumbling the
               instant a roll happens, not wait for the token's walk to
               finish revealing everything else. */}
-          <DiceRoller game={room.game ?? game} />
+          <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
         </div>
       </div>
 
