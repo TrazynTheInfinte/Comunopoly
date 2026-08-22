@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { afkSkipTurnAndSync, confirmStillHereAndSync } from '../lib/gameSync';
+import { playAfkAlert } from '../lib/sound';
 import type { GameState } from '../types/game';
 
 const IDLE_BEFORE_PROMPT_MS = 30_000;
@@ -53,7 +54,10 @@ export function useAfkSelfCheck(
   useEffect(() => {
     setVisible(false);
     if (!isMyTurn || !game) return;
-    const timer = setTimeout(() => setVisible(true), IDLE_BEFORE_PROMPT_MS);
+    const timer = setTimeout(() => {
+      setVisible(true);
+      playAfkAlert();
+    }, IDLE_BEFORE_PROMPT_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnKey]);

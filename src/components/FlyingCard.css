@@ -1,0 +1,50 @@
+.flying-card {
+  position: fixed;
+  left: var(--flying-card-start-x);
+  top: var(--flying-card-start-y);
+  z-index: 60;
+  pointer-events: none;
+  width: 84px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.3em;
+  box-sizing: border-box;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-paper);
+  border: 2px solid var(--color-black);
+  box-shadow: 2px 2px 0 rgba(17, 17, 17, 0.4);
+  animation: flying-card-move 0.5s cubic-bezier(0.3, 0, 0.4, 1) forwards;
+}
+
+.flying-card-communistTest {
+  background: var(--color-red);
+}
+
+.flying-card-noChance {
+  background: var(--color-black);
+}
+
+@keyframes flying-card-move {
+  from {
+    transform: translate(-50%, -50%) scale(0.85) rotate(-8deg);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(
+        calc(-50% + (var(--flying-card-end-x) - var(--flying-card-start-x))),
+        calc(-50% + (var(--flying-card-end-y) - var(--flying-card-start-y)))
+      )
+      scale(1) rotate(3deg);
+    opacity: 0.2;
+  }
+}

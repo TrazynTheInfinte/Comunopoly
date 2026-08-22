@@ -211,6 +211,25 @@ export function playEndgameFanfare(): void {
   notes.forEach((freq, i) => tone(freq, 0.35, 'square', 0.22, i * 0.15));
 }
 
+/** A property forcibly changing hands with no roubles involved - Kulak's/T-Rex's auto-seize, Siege of Stalingrad, The Volga. Harsher/darker than playCash, since nobody got paid for this. */
+export function playSeize(): void {
+  sweep(500, 150, 0.28, 'sawtooth', 0.25);
+  noiseBurst(0.08, 0.12);
+}
+
+/** Plays the instant it becomes a player's own turn - a cue to notice even if they're not looking at the board (alt-tabbed, etc). */
+export function playYourTurn(): void {
+  tone(494, 0.1, 'triangle', 0.22);
+  tone(659, 0.16, 'triangle', 0.22, 0.1);
+}
+
+/** The "are you still there?" AFK prompt appearing (see useAfkSelfCheck) - deliberately more insistent than playYourTurn, since this one means a countdown to an automatic skip has already started. */
+export function playAfkAlert(): void {
+  tone(220, 0.12, 'square', 0.2);
+  tone(220, 0.12, 'square', 0.2, 0.2);
+  tone(220, 0.12, 'square', 0.2, 0.4);
+}
+
 // --- Background music: a tiny chiptune sequencer --------------------------
 
 const NOTE_FREQ: Record<string, number> = {

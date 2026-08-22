@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
 import { findCard } from '../data/cards';
+import type { CardDeck } from '../types/game';
 import {
   acceptVolgaOfferAndSync,
   accuseOfTrotskyAndSync,
@@ -25,6 +26,7 @@ import DevPanel from './DevPanel';
 import DiceRoller from './DiceRoller';
 import EndgameResultsScreen from './EndgameResultsScreen';
 import EndgameTargetPrompt from './EndgameTargetPrompt';
+import FlyingCard from './FlyingCard';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
 import PieceChoicePrompt from './PieceChoicePrompt';
@@ -37,6 +39,7 @@ import { useGameMusic } from './useGameMusic';
 import { useHostAfkWatchdog } from './useHostAfkWatchdog';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
+import { useYourTurnChime } from './useYourTurnChime';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -59,6 +62,12 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
   const [rollTrigger, setRollTrigger] = useState(0);
+  // A card visibly flying from the deck pile just clicked (Board.tsx's
+  // onDeckClick reports where) to wherever the real reveal panel lands
+  // (layoutActionsRef below) - purely cosmetic, cleared once the flight
+  // animation finishes on its own (see FlyingCard).
+  const [cardFlight, setCardFlight] = useState<{ deck: CardDeck; from: DOMRect; to: DOMRect } | null>(null);
+  const layoutActionsRef = useRef<HTMLElement>(null);
   // Only consulted below a screen-width breakpoint (see GameBoard.css) -
   // above it, CSS shows every section regardless of this and the tab
   // buttons themselves stay hidden, so this state is simply inert on a
@@ -83,6 +92,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const isHost = playerId === room.hostId;
   const afkPrompt = useAfkSelfCheck(roomCode, game, playerId, isMyTurnEarly);
   useHostAfkWatchdog(roomCode, room, game, isHost);
+  useYourTurnChime(isMyTurnEarly);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
@@ -125,6 +135,12 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
     }
   }
 
+  function handleDeckClick(deck: CardDeck, originRect: DOMRect) {
+    const targetRect = layoutActionsRef.current?.getBoundingClientRect();
+    if (!targetRect) return;
+    setCardFlight({ deck, from: originRect, to: targetRect });
+  }
+
   return (
     <main className="game-board">
       {afkPrompt.visible && (
@@ -137,6 +153,15 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
             </p>
           </div>
         </div>
+      )}
+
+      {cardFlight && (
+        <FlyingCard
+          deck={cardFlight.deck}
+          from={cardFlight.from}
+          to={cardFlight.to}
+          onDone={() => setCardFlight(null)}
+        />
       )}
 
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
@@ -235,7 +260,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
           </ul>
         </section>
 
-        <section className="layout-actions">
+        <section className="layout-actions" ref={layoutActionsRef}>
           {me?.isAfkSpectating && (
             <div className="purchase-prompt card-prompt afk-rejoin-banner">
               <p>You were benched for being away too long - you're just spectating for now.</p>
@@ -389,7 +414,13 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
         </section>
 
         <div className="board-column layout-board">
-          <Board room={room} roomCode={roomCode} playerId={playerId} game={game} />
+          <Board
+            room={room}
+            roomCode={roomCode}
+            playerId={playerId}
+            game={game}
+            onDeckClick={handleDeckClick}
+          />
         </div>
 
         <div className="dice-column layout-dice">

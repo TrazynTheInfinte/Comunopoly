@@ -1,7 +1,7 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { BOARD } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
-import type { BoardTile, GameState } from '../types/game';
+import type { BoardTile, CardDeck, GameState } from '../types/game';
 import type { Room } from '../types/room';
 import {
   ArrowIcon,
@@ -27,6 +27,8 @@ interface BoardProps {
   roomCode: string;
   playerId: string;
   game: GameState;
+  /** Reports a deck pile's on-screen position the instant it's clicked, before the real draw resolves - lets GameBoard fly a card from here to where the reveal panel appears. Purely cosmetic; the actual draw still goes through drawFromPileAndSync exactly as before. */
+  onDeckClick?: (deck: CardDeck, originRect: DOMRect) => void;
 }
 
 // Stable per-seat colors for the plain position tokens - not Piece art
@@ -145,7 +147,7 @@ function BoardPopup({
  * (that stepping itself is driven by `game` already being the "staged"
  * state from useStagedGame, not anything this component does itself).
  */
-function Board({ room, roomCode, playerId, game }: BoardProps) {
+function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
   // Which occupant token (if any) currently has its owner label open -
   // a tap/click toggles it, since a hover-only title tooltip doesn't
   // work on touch devices at all, and works well enough on desktop that
@@ -193,7 +195,10 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
           type="button"
           className={`board-center-deck board-center-deck-communist ${awaitingDeck === 'communistTest' ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'communistTest'}
-          onClick={() => drawFromPileAndSync(roomCode, game)}
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            onDeckClick?.('communistTest', event.currentTarget.getBoundingClientRect());
+            drawFromPileAndSync(roomCode, game);
+          }}
         >
           <HammerIcon className="board-center-deck-icon" />
           COMMUNIST TEST
@@ -202,7 +207,10 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
           type="button"
           className={`board-center-deck board-center-deck-nochance ${awaitingDeck === 'noChance' ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'noChance'}
-          onClick={() => drawFromPileAndSync(roomCode, game)}
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            onDeckClick?.('noChance', event.currentTarget.getBoundingClientRect());
+            drawFromPileAndSync(roomCode, game);
+          }}
         >
           <ChanceIcon className="board-center-deck-icon" />
           NO CHANCE
