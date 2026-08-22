@@ -4,7 +4,7 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
-  max-width: 1180px;
+  max-width: 1550px;
   margin: 0 auto;
   font-family: var(--font-mono);
 }
@@ -20,14 +20,16 @@
 }
 
 /* Side panel (status/actions/prompts/log/dev panel) fixed to the left in
-   its own column; the board gets the remaining space and centers itself
-   within it - keeps the page from growing tall the way a single stacked
-   column did, and keeps the board the visual centerpiece. Falls back to
-   stacking (side panel on top, board below) once there's no room for
-   both side by side. */
+   its own column; the board gets the middle column and centers itself
+   within it. The third column is deliberately empty - same width as the
+   sidebar - so the middle column (and the board inside it) lands on the
+   true horizontal center of the screen instead of just the leftover
+   space to the right of the sidebar. Falls back to stacking (side panel
+   on top, board below) once there's no room for all three side by
+   side. */
 .board-layout {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 340px 1fr 340px;
   gap: 1.5rem;
   align-items: start;
 }
