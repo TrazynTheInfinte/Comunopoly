@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import './App.css';
+import BrutalistBackground from './components/BrutalistBackground';
 import RoomView from './components/RoomView';
 import SoundToggle from './components/SoundToggle';
 import { createRoom, joinRoom } from './lib/rooms';
@@ -92,6 +93,7 @@ function App() {
   if (view === 'lobby') {
     return (
       <>
+        <BrutalistBackground />
         <SoundToggle />
         <RoomView roomCode={activeRoomCode} playerId={playerId} />
       </>
@@ -100,6 +102,7 @@ function App() {
 
   return (
     <main className="app">
+      <BrutalistBackground />
       <SoundToggle />
       <p className="build-badge">build {__BUILD_SHA__}</p>
       <h1 className="title">COMUNOPOLY</h1>
