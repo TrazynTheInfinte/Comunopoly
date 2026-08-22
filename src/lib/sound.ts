@@ -293,9 +293,9 @@ function playTrack(track: Note[]): number {
   return t - ctx.currentTime;
 }
 
-/** Starts (or continues) the shuffling menu-music loop. No-op if already playing or muted. Menu music only - see startGameMusic/startFinalRoundMusic for the real-audio-file tracks that play once a game's actually underway. */
+/** Starts (or continues) the shuffling menu-music loop. No-op if already playing, muted, or a game's real background track is active - menu music must never play underneath the in-game tracks (they're separate audio systems, so nothing else would stop the overlap). See startGameMusic/startFinalRoundMusic for the real-audio-file tracks that play once a game's actually underway. */
 export function startMenuMusic(): void {
-  if (menuMusicPlaying || muted) return;
+  if (menuMusicPlaying || muted || gameMusicMode) return;
   const ctx = ensureContext();
   if (!ctx) return;
   menuMusicPlaying = true;
