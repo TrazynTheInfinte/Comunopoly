@@ -19,6 +19,7 @@ import {
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
+  drawFromPile,
   endTurn,
   getAvailablePieceIds,
   mortgageProperty,
@@ -626,6 +627,7 @@ describe('Communist Test / No Chance cards', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.noChanceDrawPile).toHaveLength(NO_CHANCE_CARDS.length - 1);
     expect(state.noChanceDiscardPile).toHaveLength(1);
@@ -641,6 +643,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
     expect(state.forcedCardId).toBeNull();
@@ -653,6 +656,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(endTurn(state)).toBe(state); // blocked while a card is pending
 
@@ -666,6 +670,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'politicalCorrectness');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({
       type: 'cardDrawn',
@@ -682,6 +687,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.roubles).toBe(2000);
   });
@@ -696,6 +702,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'accident');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -707,6 +714,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'antiRevisionist');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.turnsToSkip).toBe(1);
   });
@@ -717,6 +725,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'partyVanguard');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
     state = acknowledgeCard(state);
 
     expect(state.players.p1.extraTurns).toBe(2);
@@ -739,6 +748,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'counterRevolutionary');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.movingBackward).toBe(true);
     expect(state.players.p2.movingBackward).toBe(false);
@@ -750,6 +760,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'culturalRevolution');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.movingBackward).toBe(true);
     expect(state.players.p2.movingBackward).toBe(true);
@@ -775,6 +786,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'blacklist');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
     state = acknowledgeCard(state);
     expect(state.players.p1.blacklisted).toBe(true);
 
@@ -817,6 +829,7 @@ describe('Communist Test / No Chance cards', () => {
     state = devSetForcedCard(state, 'nomenklatura');
     state = devSetForcedRoll(state, [3, 5]); // 30 + 8 -> tile 38, Communist Test
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.position).toBe(37); // The Kremlin
     // No STOY pass fee despite wrapping through it, plus the Kremlin's
@@ -833,6 +846,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'goIntoHiding');
     state = devSetForcedRoll(state, [1, 3]); // -> tile 4
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.turnsToSkip).toBe(3);
     expect(state.players.p1.hidingPosition).toBe(4);
@@ -843,6 +857,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'bankError'); // p2's own draw, kept deterministic
     state = devSetForcedRoll(state, [1, 3]); // p2: 0 + 4 -> lands on p1's hiding spot too
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.roubles).toBe(1000); // Disappeared (reset)
     expect(state.players.p1.hidingPosition).toBeNull();
@@ -854,6 +869,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'goIntoHiding');
     state = devSetForcedRoll(state, [2, 2]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.lastRollWasDoubles).toBe(false);
   });
@@ -864,7 +880,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'nkvd');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0); // picks question index 0
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0); // picks question index 0
 
       expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0, forPlayerId: 'p1' });
       expect(state.players.p1.inJail).toBe(false);
@@ -875,7 +892,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'nkvd');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0); // question 0: "...True Grit?" -> "John Wayne"
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0); // question 0: "...True Grit?" -> "John Wayne"
 
       state = answerNkvdQuiz(state, "  john wayne.  "); // trimmed/lowercased/punctuation-stripped
 
@@ -888,7 +906,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'nkvd');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0);
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0);
 
       state = answerNkvdQuiz(state, 'Clint Eastwood');
 
@@ -911,6 +930,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'collectivizationDrive');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p2.roubles).toBe(1000);
@@ -931,7 +951,8 @@ describe('newly automated cards', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'greatPurge');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // loser = turnOrder[0] = p1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // loser = turnOrder[0] = p1
 
     expect(state.players.p1.roubles).toBe(1000); // Disappeared (reset)
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -944,7 +965,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0.99); // -> 6
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0.99); // -> 6
 
       expect(state.players.p1.roubles).toBe(1500);
       expect(state.players.p1.inJail).toBe(false);
@@ -955,7 +977,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0); // -> 1
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0); // -> 1
 
       expect(state.players.p1.roubles).toBe(1000); // reset by Disappear
     });
@@ -966,7 +989,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0.4); // -> 3
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0.4); // -> 3
 
       expect(state.players.p1.roubles).toBe(1500); // kept the 500
       expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -978,7 +1002,8 @@ describe('newly automated cards', () => {
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
-      state = rollDice(state, () => 0.4); // -> 3, no property owned
+      state = rollDice(state);
+      state = drawFromPile(state, () => 0.4); // -> 3, no property owned
 
       expect(state.players.p1.roubles).toBe(1500);
       expect(state.players.p1.inJail).toBe(true);
@@ -991,6 +1016,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'telegraphUnion');
     state = devSetForcedRoll(state, [1, 3]); // -> tile 4
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.commissarPlayerId).toBe('p1');
 
     // Commissar closes Komsomolskaya Station (tile 5) by landing on it.
@@ -1015,7 +1041,8 @@ describe('newly automated cards', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'fourthInternational');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0);
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0);
 
     expect(state.players.p1.isTrotsky).toBe(true);
     expect(state.players.p2.isTrotsky).toBe(false);
@@ -1035,6 +1062,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'siegeOfStalingrad');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'siegeOfStalingrad', forPlayerId: 'p1' });
 
     state = resolveCardTarget(state, { targetTileId: 6 });
@@ -1071,6 +1099,7 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'doubleAgent');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent', forPlayerId: 'p1' });
 
     state = resolveCardTarget(state, { targetPlayerId: 'p2' });
@@ -1088,7 +1117,8 @@ describe('newly automated cards', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // internal die roll -> 1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // internal die roll -> 1
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -1100,7 +1130,8 @@ describe('newly automated cards', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0.99); // internal die roll -> 6, not 1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0.99); // internal die roll -> 6, not 1
 
     expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'phoneCallFromStalin', forPlayerId: 'p1' });
 
@@ -1126,6 +1157,7 @@ describe('held cards (hand)', () => {
     state = devSetForcedCard(state, 'denounceCollaborators');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.players.p1.heldCardIds).toContain('denounceCollaborators');
 
     state = {
@@ -1160,6 +1192,7 @@ describe('held cards (hand)', () => {
     state = devSetForcedCard(state, 'secretInformant');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.players.p1.heldCardIds).toContain('secretInformant');
 
     state = withPosition(state, 'p1', 15);
@@ -1178,6 +1211,7 @@ describe('held cards (hand)', () => {
       state = devSetForcedCard(state, 'showTrial');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
+      state = drawFromPile(state);
       state = { ...state, players: { ...state.players, p1: { ...state.players.p1, inJail: true } } };
 
       state = callShowTrial(state, 'p1', 'p1');
@@ -1191,6 +1225,7 @@ describe('held cards (hand)', () => {
       state = devSetForcedCard(state, 'showTrial');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
+      state = drawFromPile(state);
       state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
 
       state = callShowTrial(state, 'p1', 'p2');
@@ -1204,6 +1239,7 @@ describe('held cards (hand)', () => {
       state = devSetForcedCard(state, 'showTrial');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
+      state = drawFromPile(state);
       state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
       state = callShowTrial(state, 'p1', 'p2');
 
@@ -1224,6 +1260,7 @@ describe('held cards (hand)', () => {
       state = devSetForcedCard(state, 'showTrial');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
+      state = drawFromPile(state);
       state = { ...state, players: { ...state.players, p3: { ...state.players.p3, inJail: true } } };
       state = callShowTrial(state, 'p1', 'p3'); // p1 is caller (weight 2)
 
@@ -1243,7 +1280,8 @@ describe('Fourth International accusation (house rule)', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'fourthInternational');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // p1 is Trotsky, hiding spot = tile 1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // p1 is Trotsky, hiding spot = tile 1
     state = acknowledgeCard(state);
 
     state = withPosition(state, 'p2', 1);
@@ -1263,7 +1301,8 @@ describe('Fourth International accusation (house rule)', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'fourthInternational');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0); // p1 is Trotsky (turnOrder[0]), hiding spot = tile 1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // p1 is Trotsky (turnOrder[0]), hiding spot = tile 1
     state = acknowledgeCard(state);
 
     state = withPosition(state, 'p2', 1);
@@ -1279,7 +1318,8 @@ describe('Fourth International accusation (house rule)', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'fourthInternational');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0);
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0);
     state = acknowledgeCard(state);
 
     state = withPosition(state, 'p2', 1);
@@ -1413,6 +1453,7 @@ describe('Piece Special Powers', () => {
     state = withPosition(state, 'p1', 35);
     state = devSetForcedRoll(state, [3, 4]); // 35 + 7 -> tile 2, Communist Test
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'communistTest' });
   });
@@ -1425,6 +1466,7 @@ describe('Piece Special Powers', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision?.type).not.toBe('cardChoice');
   });
@@ -1437,6 +1479,7 @@ describe('Piece Special Powers', () => {
     state = withPosition(state, 'p1', 35);
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
     expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'communistTest' });
 
     state = chooseCard(state, 'bankError');
@@ -1456,6 +1499,7 @@ describe('Piece Special Powers', () => {
     state = withPosition(state, 'p1', 35);
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     const before = state;
     state = chooseCard(state, 'not-a-real-card-id');
@@ -1470,6 +1514,7 @@ describe('Piece Special Powers', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedRoll(state, [1, 3]); // 0 + 4 -> tile 4, No Chance
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({ type: 'cardChoice', deck: 'noChance' });
   });
@@ -1483,6 +1528,7 @@ describe('Piece Special Powers', () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'bankError', forPlayerId: 'p1' });
   });
@@ -1708,6 +1754,7 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.pendingDecision).toEqual({ type: 'catRedirect', cardId: 'bankError' });
     expect(state.players.p1.roubles).toBe(1000); // not applied yet
@@ -1719,6 +1766,7 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     state = resolveCatRedirect(state, null);
 
@@ -1732,6 +1780,7 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     state = resolveCatRedirect(state, 'p2');
 
@@ -1747,6 +1796,7 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = devSetForcedCard(state, 'doubleAgent');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     state = resolveCatRedirect(state, 'p2');
     expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'doubleAgent', forPlayerId: 'p2' });
@@ -1762,7 +1812,8 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'nkvd');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0);
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0);
 
     state = resolveCatRedirect(state, 'p2', () => 0);
     expect(state.pendingDecision).toEqual({ type: 'nkvdQuiz', questionIndex: 0, forPlayerId: 'p2' });
@@ -1779,6 +1830,7 @@ describe("Cat's power (keep or redirect a drawn card's effects)", () => {
     state = devSetForcedCard(state, 'bankError');
     state = devSetForcedRoll(state, [3, 4]);
     state = rollDice(state);
+    state = drawFromPile(state);
     const before = state;
 
     expect(resolveCatRedirect(state, 'p1')).toBe(before); // can't redirect to self
@@ -1964,6 +2016,7 @@ describe("Hat's power (free house on completing a collection)", () => {
     state = devSetForcedCard(state, 'siegeOfStalingrad');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
+    state = drawFromPile(state);
 
     state = resolveCardTarget(state, { targetTileId: 3 });
 
@@ -1984,7 +2037,8 @@ describe("Hat's power (free house on completing a collection)", () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
-    state = rollDice(state, () => 0.99); // internal die roll -> 6, not 1
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0.99); // internal die roll -> 6, not 1
 
     // Re-claims an already-owned tile - routes back through giveTileTo,
     // re-triggering the Hat check, but the group is already recorded.
@@ -2008,6 +2062,7 @@ describe("Hat's power (free house on completing a collection)", () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.ownedTileIds).toEqual([]);
     expect(state.hatFreeHouseGroups).toEqual([]);
@@ -2116,6 +2171,7 @@ describe('mortgaging', () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.ownedTileIds).toEqual([]);
     expect(state.mortgagedTileIds).toEqual([]);
@@ -2237,6 +2293,7 @@ describe('Smuggling to the West', () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.westRoubles).toBe(0);
     expect(state.players.p1.pendingWestRoubles).toBe(0);
@@ -2373,6 +2430,7 @@ describe('Disappear and the Piece Pool', () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.retiredPieceIds).toEqual(['boot']);
     expect(state.pendingPieceChoices).toEqual(['p1']);
@@ -2442,6 +2500,7 @@ describe('Disappear and the Piece Pool', () => {
     state = devSetForcedRoll(state, [3, 4]);
 
     state = rollDice(state);
+    state = drawFromPile(state);
 
     expect(state.players.p1.isSpectating).toBe(true);
     expect(state.pendingPieceChoices).toEqual([]);
@@ -2490,7 +2549,8 @@ describe('Endgame trigger (the Piece Pool running dry)', () => {
     state = devSetForcedCard(state, 'accident');
     state = withPosition(state, 'p1', 0);
     state = devSetForcedRoll(state, [3, 4]);
-    state = rollDice(state); // p1 Disappears - exactly one Piece ('car') left in the Pool
+    state = rollDice(state);
+    state = drawFromPile(state); // p1 Disappears - exactly one Piece ('car') left in the Pool
 
     expect(state.pendingPieceChoices).toEqual(['p1']);
     expect(state.endgame).toBeNull();
@@ -2551,7 +2611,8 @@ describe('Endgame trigger (the Piece Pool running dry)', () => {
     state = withPosition(state, 'p1', 0);
     state = devSetForcedRoll(state, [3, 4]);
 
-    state = rollDice(state); // p1 Disappears with nothing left in the Pool
+    state = rollDice(state);
+    state = drawFromPile(state); // p1 Disappears with nothing left in the Pool
 
     expect(state.players.p1.isSpectating).toBe(true);
     expect(state.endgame?.finalLapRemaining).toEqual(['p2']);

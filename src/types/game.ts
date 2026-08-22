@@ -165,10 +165,16 @@ export interface GamePlayerState {
  * smuggleOffer is the current player choosing how much (if anything) to
  * Smuggle to the West - opened on landing on Free Parking (everyone), or
  * on landing on any owned property/railroad (Penguin's Special Power).
+ *
+ * awaitingCardDraw is landing on a Communist Test/No Chance tile itself -
+ * the deck doesn't actually get drawn from until the player clicks the
+ * matching pile (see drawFromPile in game/engine.ts), which is what
+ * turns into cardChoice or cardDrawn next.
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
   | { type: 'volgaOffer'; tileId: number }
+  | { type: 'awaitingCardDraw'; deck: CardDeck }
   | { type: 'cardChoice'; deck: CardDeck }
   | { type: 'catRedirect'; cardId: string }
   | { type: 'cardTarget'; cardId: string; forPlayerId: string }

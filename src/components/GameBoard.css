@@ -121,6 +121,26 @@
   color: var(--color-red);
 }
 
+/* A quick flourish for a just-drawn card - flips face-up like it just
+   came off the pile, echoing the click that drew it (see the deck
+   piles in Board.tsx). Re-plays every time (keyed by cardId in
+   GameBoard.tsx, so React treats each new card as a fresh element). */
+.card-reveal {
+  animation: card-flip-reveal 0.35s ease-out;
+  transform-origin: center;
+}
+
+@keyframes card-flip-reveal {
+  from {
+    transform: rotateY(90deg) scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
 .event-log {
   list-style: none;
   display: flex;

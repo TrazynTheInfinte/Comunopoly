@@ -22,6 +22,7 @@ import {
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
+  drawFromPile,
   endTurn,
   mortgageProperty,
   resolveCardTarget,
@@ -83,6 +84,10 @@ export async function acknowledgeCardAndSync(roomCode: string, game: GameState) 
 
 export async function chooseCardAndSync(roomCode: string, game: GameState, cardId: string) {
   await writeGameState(roomCode, chooseCard(game, cardId));
+}
+
+export async function drawFromPileAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, drawFromPile(game));
 }
 
 export async function resolveCardTargetAndSync(

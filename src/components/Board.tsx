@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { BOARD } from '../data/board';
+import { drawFromPileAndSync } from '../lib/gameSync';
 import type { BoardTile, GameState } from '../types/game';
 import type { Room } from '../types/room';
 import {
@@ -16,11 +17,12 @@ import {
   TrainIcon,
 } from './BoardTileIcon';
 import PieceIcon from './PieceIcon';
-import { useAnimatedPositions } from './useAnimatedPositions';
 import './Board.css';
 
 interface BoardProps {
   room: Room;
+  roomCode: string;
+  playerId: string;
   game: GameState;
 }
 
@@ -74,15 +76,15 @@ function DeckIcon({ tile }: { tile: BoardTile }) {
  * (not the plain text readout that's still shown below it for actions/
  * decisions). Deliberately CSS/SVG only - no image assets. Sound is a
  * separate, later pass; this one covers the board itself (layout, color
- * groups, tile icons, ownership/houses/mortgages), a distinct token icon
- * per Piece, and tokens stepping tile-by-tile across the board instead
- * of snapping to a new position.
+ * groups, tile icons, ownership/houses/mortgages, the two clickable
+ * card piles), a distinct token icon per Piece, and tokens stepping
+ * tile-by-tile across the board instead of snapping to a new position
+ * (that stepping itself is driven by `game` already being the "staged"
+ * state from useStagedGame, not anything this component does itself).
  */
-function Board({ room, game }: BoardProps) {
-  const displayPositions = useAnimatedPositions(game);
-
-  const tokenColorFor = (playerId: string) => {
-    const index = game.turnOrder.indexOf(playerId);
+function Board({ room, roomCode, playerId, game }: BoardProps) {
+  const tokenColorFor = (id: string) => {
+    const index = game.turnOrder.indexOf(id);
     return TOKEN_COLORS[index % TOKEN_COLORS.length];
   };
 
@@ -93,12 +95,31 @@ function Board({ room, game }: BoardProps) {
     return null;
   };
 
+  const isMyTurn = game.turnOrder[game.currentTurnIndex] === playerId;
+  // Visible to everyone watching (the glow is shared game state), but
+  // only clickable for whoever's turn it actually is.
+  const awaitingDeck = game.pendingDecision?.type === 'awaitingCardDraw' ? game.pendingDecision.deck : null;
+
   return (
     <div className="board">
       <div className="board-center">
         <div className="board-center-banner">COMMUNOPOLY</div>
-        <div className="board-center-deck board-center-deck-communist">COMMUNIST TEST</div>
-        <div className="board-center-deck board-center-deck-nochance">NO CHANCE</div>
+        <button
+          type="button"
+          className={`board-center-deck board-center-deck-communist ${awaitingDeck === 'communistTest' ? 'is-clickable' : ''}`}
+          disabled={!isMyTurn || awaitingDeck !== 'communistTest'}
+          onClick={() => drawFromPileAndSync(roomCode, game)}
+        >
+          COMMUNIST TEST
+        </button>
+        <button
+          type="button"
+          className={`board-center-deck board-center-deck-nochance ${awaitingDeck === 'noChance' ? 'is-clickable' : ''}`}
+          disabled={!isMyTurn || awaitingDeck !== 'noChance'}
+          onClick={() => drawFromPileAndSync(roomCode, game)}
+        >
+          NO CHANCE
+        </button>
       </div>
 
       {BOARD.map((tile) => {
@@ -108,7 +129,7 @@ function Board({ room, game }: BoardProps) {
         const houses = game.propertyHouses[tile.id] ?? 0;
         const mortgaged = game.mortgagedTileIds.includes(tile.id);
         const occupants = game.turnOrder.filter(
-          (id) => !game.players[id].isSpectating && displayPositions[id] === tile.id,
+          (id) => !game.players[id].isSpectating && game.players[id].position === tile.id,
         );
 
         return (

@@ -1022,6 +1022,20 @@ function resolveCardLanding(
 }
 
 /**
+ * Clicking the pile matching an awaitingCardDraw decision actually
+ * draws from it - either resolving a normal card immediately (or
+ * opening cardChoice for Car/Dog's power), same as resolveCardLanding
+ * always did, just gated behind this explicit click instead of running
+ * automatically the instant the player lands on the tile.
+ */
+export function drawFromPile(state: GameState, rng: () => number = Math.random): GameState {
+  if (state.pendingDecision?.type !== 'awaitingCardDraw') return state;
+  const playerId = currentPlayerId(state);
+  const { deck } = state.pendingDecision;
+  return resolveCardLanding(state, playerId, deck, rng);
+}
+
+/**
  * The current player picks a specific card still in the deck's draw
  * pile (Car/Dog's choose-a-card power), instead of drawing blind. If
  * `cardId` isn't actually in that pile, this is a no-op.
@@ -1174,7 +1188,11 @@ function resolveLanding(
   state: GameState,
   playerId: string,
   position: number,
-  rng: () => number,
+  // Card draws no longer happen automatically on landing (see the
+  // 'card' case below) - nothing here needs randomness anymore, but the
+  // signature stays for now since both call sites already have an rng
+  // in scope and threading it through costs nothing.
+  _rng: () => number,
 ): GameState {
   const tile = getTile(position);
 
@@ -1325,7 +1343,9 @@ function resolveLanding(
       if (tile.id === NKVD_TILE_ID) return resolveNkvdLanding(state, playerId);
       return state;
     case 'card':
-      return resolveCardLanding(state, playerId, tile.deck, rng);
+      // The deck isn't actually drawn from here - just marks which pile
+      // is now clickable. See drawFromPile, triggered by that click.
+      return { ...state, pendingDecision: { type: 'awaitingCardDraw', deck: tile.deck } };
     case 'freeParking':
       return resolveFreeParkingLanding(state, playerId);
     // Jail (just visiting) has no effect.

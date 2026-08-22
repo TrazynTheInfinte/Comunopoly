@@ -27,6 +27,7 @@ import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import { useStagedGame } from './useStagedGame';
 import './GameBoard.css';
 
 interface GameBoardProps {
@@ -46,7 +47,11 @@ function pieceName(pieceId: string): string {
 function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
-  const game = room.game;
+  // Delays revealing anything about a state update besides the mover's
+  // token walking there, so a card that Disappears the drawer (or any
+  // other landing effect) doesn't seem to happen before their piece has
+  // visibly finished moving - see useStagedGame for the full story.
+  const game = useStagedGame(room.game);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
@@ -194,8 +199,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
             </div>
           )}
 
-          {pendingCard && (
-            <div className="purchase-prompt card-prompt">
+          {pendingCard && game.pendingDecision?.type === 'cardDrawn' && (
+            <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
               <p className="card-title">{pendingCard.title}</p>
               <p>{pendingCard.text}</p>
               <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
@@ -280,7 +285,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
         </aside>
 
         <div className="board-column">
-          <Board room={room} game={game} />
+          <Board room={room} roomCode={roomCode} playerId={playerId} game={game} />
         </div>
       </div>
 
