@@ -238,14 +238,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   border: 1px solid var(--color-black);
   color: var(--color-paper);
-  font-size: 0.32rem;
-  font-weight: 800;
-  font-family: var(--font-display);
+  animation: tile-token-hop 0.16s ease-out;
+}
+
+.tile-token-icon {
+  width: 9px;
+  height: 9px;
+}
+
+/* Plays every time a token's displayed tile changes (see
+   useAnimatedPositions) - a little pop on each hop rather than a smooth
+   continuous slide, since the token is re-parented into a different
+   tile's DOM node each step rather than tweened across pixel
+   coordinates. */
+@keyframes tile-token-hop {
+  from {
+    transform: scale(0.4);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 @media (max-width: 420px) {

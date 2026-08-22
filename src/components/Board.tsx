@@ -15,6 +15,8 @@ import {
   StarIcon,
   TrainIcon,
 } from './BoardTileIcon';
+import PieceIcon from './PieceIcon';
+import { useAnimatedPositions } from './useAnimatedPositions';
 import './Board.css';
 
 interface BoardProps {
@@ -70,13 +72,15 @@ function DeckIcon({ tile }: { tile: BoardTile }) {
 /**
  * The actual 40-tile board, laid out as a physical Monopoly-style square
  * (not the plain text readout that's still shown below it for actions/
- * decisions). Deliberately CSS/SVG only - no image assets. Piece-
- * specific tokens, tile-landing animation, and sound are all separate,
- * later passes; this one is just the board itself: layout, color
- * groups, tile icons, ownership/houses/mortgages, and plain colored
- * position markers.
+ * decisions). Deliberately CSS/SVG only - no image assets. Sound is a
+ * separate, later pass; this one covers the board itself (layout, color
+ * groups, tile icons, ownership/houses/mortgages), a distinct token icon
+ * per Piece, and tokens stepping tile-by-tile across the board instead
+ * of snapping to a new position.
  */
 function Board({ room, game }: BoardProps) {
+  const displayPositions = useAnimatedPositions(game);
+
   const tokenColorFor = (playerId: string) => {
     const index = game.turnOrder.indexOf(playerId);
     return TOKEN_COLORS[index % TOKEN_COLORS.length];
@@ -103,7 +107,9 @@ function Board({ room, game }: BoardProps) {
         const owner = tile.kind === 'property' || tile.kind === 'railroad' ? ownerOf(tile.id) : null;
         const houses = game.propertyHouses[tile.id] ?? 0;
         const mortgaged = game.mortgagedTileIds.includes(tile.id);
-        const occupants = game.turnOrder.filter((id) => game.players[id].position === tile.id);
+        const occupants = game.turnOrder.filter(
+          (id) => !game.players[id].isSpectating && displayPositions[id] === tile.id,
+        );
 
         return (
           <div
@@ -161,9 +167,9 @@ function Board({ room, game }: BoardProps) {
                     key={id}
                     className="tile-token"
                     style={{ background: tokenColorFor(id) }}
-                    title={room.players[id]?.name}
+                    title={`${room.players[id]?.name} (${game.players[id].pieceId})`}
                   >
-                    {room.players[id]?.name?.[0]?.toUpperCase() ?? '?'}
+                    <PieceIcon pieceId={game.players[id].pieceId} className="tile-token-icon" />
                   </span>
                 ))}
               </div>
