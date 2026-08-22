@@ -106,13 +106,24 @@ function BoardPopup({
   children: ReactNode;
 }) {
   const { row, col } = gridPositionOf(tileId);
+  const side = sideOf(tileId);
+  // Centering the popup over a tile in the left/right columns means
+  // roughly half of it hangs off the edge of the (often narrow, on
+  // mobile) screen. Anchor it to grow inward from the tile's own inner
+  // edge instead for those two columns; top/bottom/corner tiles have
+  // room on both sides, so those stay centered.
+  const leftPercent =
+    side === 'left' ? (col / 11) * 100 : side === 'right' ? ((col - 1) / 11) * 100 : ((col - 0.5) / 11) * 100;
+  const translateX = side === 'left' ? '8px' : side === 'right' ? 'calc(-100% - 8px)' : '-50%';
+
   return (
     <div
       className="board-popup"
       style={{
         top: `${((row - 0.5) / 11) * 100}%`,
-        left: `${((col - 0.5) / 11) * 100}%`,
-      }}
+        left: `${leftPercent}%`,
+        '--popup-translate-x': translateX,
+      } as CSSProperties}
       onClick={(event) => {
         event.stopPropagation();
         onDismiss();

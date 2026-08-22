@@ -453,7 +453,10 @@
    float above one, not be squeezed inside its tiny box. */
 .board-popup {
   position: absolute;
-  transform: translate(-50%, -160%);
+  /* --popup-translate-x defaults to centered (-50%); Board.tsx
+     overrides it for left/right-column tiles so the popup grows
+     inward from the tile's edge instead of hanging off the screen. */
+  transform: translate(var(--popup-translate-x, -50%), -160%);
   z-index: 15;
   cursor: default;
   font-family: var(--font-mono);
