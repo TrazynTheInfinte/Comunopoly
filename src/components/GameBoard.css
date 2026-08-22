@@ -168,3 +168,12 @@
   font-size: 0.85rem;
   color: var(--color-grey);
 }
+
+/* Fills the empty space at the bottom of the sidebar once the status/
+   actions/log above it settle into their normal (fairly short) height. */
+.propaganda-banner {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--color-black);
+}

@@ -294,6 +294,12 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
               ))}
           </ul>
 
+          <img
+            className="propaganda-banner"
+            src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
+            alt="Capitalism has no future. Fight for communism."
+          />
+
           {isDevPanelUnlocked && <DevPanel room={room} roomCode={roomCode} game={game} />}
         </aside>
 
