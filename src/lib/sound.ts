@@ -6,12 +6,35 @@
 // exported function names are the integration point either way.
 
 const MUTE_STORAGE_KEY = 'comunopoly-muted';
+const MUSIC_VOLUME_STORAGE_KEY = 'comunopoly-music-volume';
+// The gain/volume actually applied is this, scaled by the user's music
+// volume preference (0-1) - these are the "100%" ceilings, tuned so
+// music sits behind the sound effects rather than over them.
+const MAX_MENU_MUSIC_GAIN = 0.16;
+const MAX_GAME_MUSIC_VOLUME = 0.35;
+
+function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
 
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 let sfxGain: GainNode | null = null;
 let musicGain: GainNode | null = null;
 let muted = localStorage.getItem(MUTE_STORAGE_KEY) === 'true';
+let musicVolume = clamp01(Number(localStorage.getItem(MUSIC_VOLUME_STORAGE_KEY) ?? '1'));
+
+export function getMusicVolume(): number {
+  return musicVolume;
+}
+
+/** A 0-1 preference, independent of the mute toggle - applies to both the menu's procedural music and the real in-game tracks. */
+export function setMusicVolume(value: number): void {
+  musicVolume = clamp01(value);
+  localStorage.setItem(MUSIC_VOLUME_STORAGE_KEY, String(musicVolume));
+  if (musicGain) musicGain.gain.value = MAX_MENU_MUSIC_GAIN * musicVolume;
+  if (gameMusicEl) gameMusicEl.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
+}
 
 function ensureContext(): AudioContext | null {
   // Some environments (very old browsers, or this code running before
@@ -32,7 +55,7 @@ function ensureContext(): AudioContext | null {
     sfxGain.connect(masterGain);
 
     musicGain = audioContext.createGain();
-    musicGain.gain.value = 0.16;
+    musicGain.gain.value = MAX_MENU_MUSIC_GAIN * musicVolume;
     musicGain.connect(masterGain);
   }
   return audioContext;
@@ -310,13 +333,18 @@ export function stopMenuMusic(): void {
 // the whole thing into memory up front the way Web Audio's
 // decodeAudioData would.
 
-const STANDARD_TRACK_URLS = ['standard-1.mp3', 'standard-2.mp3', 'standard-3.mp3'].map(
-  (name) => `${import.meta.env.BASE_URL}audio/${name}`,
-);
-const FINAL_TRACK_URLS = ['final-1.mp3', 'final-2.mp3', 'final-3.mp3'].map(
-  (name) => `${import.meta.env.BASE_URL}audio/${name}`,
-);
-const GAME_MUSIC_VOLUME = 0.35;
+// Exposed (as name/url pairs) for the Dev Panel's track switcher -
+// everything else in this module just picks from these by index.
+export const STANDARD_TRACKS = ['standard-1.mp3', 'standard-2.mp3', 'standard-3.mp3'].map((name) => ({
+  name,
+  url: `${import.meta.env.BASE_URL}audio/${name}`,
+}));
+export const FINAL_TRACKS = ['final-1.mp3', 'final-2.mp3', 'final-3.mp3'].map((name) => ({
+  name,
+  url: `${import.meta.env.BASE_URL}audio/${name}`,
+}));
+const STANDARD_TRACK_URLS = STANDARD_TRACKS.map((t) => t.url);
+const FINAL_TRACK_URLS = FINAL_TRACKS.map((t) => t.url);
 
 let gameMusicEl: HTMLAudioElement | null = null;
 let gameMusicMode: 'standard' | 'final' | null = null;
@@ -326,7 +354,7 @@ function ensureGameMusicElement(): HTMLAudioElement | null {
   if (typeof Audio === 'undefined') return null;
   if (!gameMusicEl) {
     gameMusicEl = new Audio();
-    gameMusicEl.volume = GAME_MUSIC_VOLUME;
+    gameMusicEl.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
   }
   return gameMusicEl;
 }
@@ -387,4 +415,34 @@ export function stopGameMusic(): void {
     gameMusicEl.onended = null;
     gameMusicEl.pause();
   }
+}
+
+/**
+ * Dev Panel track switcher: forces a specific track to play right now,
+ * bypassing the normal shuffle/pick-at-random logic - lets someone
+ * preview any of the 6 without waiting for it to come up naturally.
+ * Standard tracks picked this way still auto-advance (to another
+ * random standard track) when they end, same as the real thing; a
+ * final track picked this way just loops, same as the real thing.
+ */
+export function debugPlayGameTrack(kind: 'standard' | 'final', index: number): void {
+  const el = ensureGameMusicElement();
+  if (!el) return;
+  const track = (kind === 'standard' ? STANDARD_TRACKS : FINAL_TRACKS)[index];
+  if (!track) return;
+
+  gameMusicMode = kind;
+  if (kind === 'standard') {
+    lastStandardTrackUrl = track.url;
+    el.loop = false;
+    el.onended = () => {
+      if (gameMusicMode === 'standard') playStandardTrack();
+    };
+  } else {
+    el.loop = true;
+    el.onended = null;
+  }
+  el.src = track.url;
+  if (muted) return;
+  el.play().catch(() => {});
 }

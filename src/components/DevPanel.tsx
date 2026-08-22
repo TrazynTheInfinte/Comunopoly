@@ -10,6 +10,7 @@ import {
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
 } from '../lib/gameSync';
+import { debugPlayGameTrack, FINAL_TRACKS, STANDARD_TRACKS } from '../lib/sound';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
 import './DevPanel.css';
@@ -28,6 +29,7 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
   const [forcedDie1, setForcedDie1] = useState('');
   const [forcedDie2, setForcedDie2] = useState('');
   const [jumpTileId, setJumpTileId] = useState(0);
+  const [selectedTrack, setSelectedTrack] = useState('standard:0');
 
   return (
     <section className="dev-panel">
@@ -169,6 +171,37 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           Runs the real thing - retires their current Piece, Seizes everything, then either queues
           a replacement pick or (once the Pool's empty) spectates them.
         </p>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Music track switcher (local only - doesn't sync to other players)</p>
+        <div className="dev-panel-row">
+          <select value={selectedTrack} onChange={(event) => setSelectedTrack(event.target.value)}>
+            <optgroup label="Standard">
+              {STANDARD_TRACKS.map((track, index) => (
+                <option key={`standard:${index}`} value={`standard:${index}`}>
+                  {track.name}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Final round">
+              {FINAL_TRACKS.map((track, index) => (
+                <option key={`final:${index}`} value={`final:${index}`}>
+                  {track.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <button
+            onClick={() => {
+              const [kind, indexStr] = selectedTrack.split(':');
+              debugPlayGameTrack(kind as 'standard' | 'final', Number(indexStr));
+            }}
+          >
+            Play
+          </button>
+        </div>
+        <p className="hint">Forces that track to play right now, bypassing the normal shuffle.</p>
       </div>
 
       <div className="dev-panel-section">
