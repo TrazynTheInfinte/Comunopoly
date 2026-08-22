@@ -19,6 +19,12 @@ import type { RoomMode } from './types/room';
 type View = 'landing' | 'name-entry' | 'lobby';
 type Mode = 'create' | 'join';
 
+/** The room code a scanned QR code (see RoomQrCode.tsx) puts in the URL as ?room=CODE - read once at initial render so the three pieces of state below can all pick it up consistently with no flash of the landing screen first. */
+function getRoomCodeFromUrl(): string | null {
+  const code = new URLSearchParams(window.location.search).get('room');
+  return code ? code.toUpperCase() : null;
+}
+
 function App() {
   // Runs for the lifetime of the app regardless of which screen is
   // showing (App itself never unmounts, even though its return value
@@ -38,15 +44,29 @@ function App() {
   // restores straight back into the lobby/game instead of the landing
   // screen - see lib/playerIdentity.ts. RoomView clears this again if
   // the room turns out to no longer exist, or the player explicitly
-  // leaves/the host closes it (handleLeaveRoom below).
-  const [view, setView] = useState<View>(() => (getStoredActiveRoomCode() ? 'lobby' : 'landing'));
+  // leaves/the host closes it (handleLeaveRoom below). A scanned QR
+  // code's ?room= takes priority over that - it's a fresh, explicit
+  // "join this room" signal, not a stale leftover from before.
+  const [view, setView] = useState<View>(() => {
+    if (getRoomCodeFromUrl()) return 'name-entry';
+    return getStoredActiveRoomCode() ? 'lobby' : 'landing';
+  });
   const [mode, setMode] = useState<Mode>('join');
   const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
   const [name, setName] = useState(() => getStoredName());
-  const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [roomCodeInput, setRoomCodeInput] = useState(() => getRoomCodeFromUrl() ?? '');
   const [activeRoomCode, setActiveRoomCode] = useState(() => getStoredActiveRoomCode() ?? '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // The ?room= param has already been captured into state above -
+  // strip it from the visible URL so a later refresh (once this
+  // player's moved on) doesn't keep re-triggering the same jump.
+  useEffect(() => {
+    if (getRoomCodeFromUrl()) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // A player's identity is just a random ID this browser remembers -
   // no accounts. useState's "lazy initializer" (passing a function

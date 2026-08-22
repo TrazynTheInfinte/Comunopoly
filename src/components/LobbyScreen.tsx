@@ -5,6 +5,7 @@ import { isPlayerAway } from '../lib/presence';
 import { choosePiece, closeLobby, leaveRoom } from '../lib/rooms';
 import type { PieceId } from '../types/game';
 import type { Room } from '../types/room';
+import RoomQrCode from './RoomQrCode';
 import './LobbyScreen.css';
 
 interface LobbyScreenProps {
@@ -58,6 +59,7 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
       <p className="lobby-label">Room Code</p>
       <h1 className="lobby-code">{roomCode}</h1>
       <p className="lobby-hint">Send this code to your comrades.</p>
+      <RoomQrCode roomCode={roomCode} />
 
       <ul className="player-list">
         {players.map(([id, player]) => (
