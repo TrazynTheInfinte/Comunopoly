@@ -1,15 +1,14 @@
 .piece-info-panel {
-  position: fixed;
-  top: 0.75rem;
-  right: 0.75rem;
-  width: min(220px, 40vw);
+  /* Sits at the top of the side panel now, in normal flow next to the
+     board, rather than floating fixed over the top-right corner of the
+     page - that started overlapping the side panel once the layout grew
+     a sidebar. */
   border: 2px solid var(--color-black);
   background: var(--color-paper);
   padding: 0.6em;
   font-family: var(--font-mono);
   font-size: 0.7rem;
   text-align: left;
-  z-index: 2;
 }
 
 .piece-info-name {

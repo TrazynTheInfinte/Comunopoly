@@ -1,11 +1,15 @@
 .board {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(11, 1fr);
-  grid-template-rows: repeat(11, 1fr);
+  /* minmax(0, 1fr), not a bare 1fr - a bare 1fr's implicit minimum is
+     "auto" (each track's content size), so tall tile text/icons were
+     forcing every row taller than its fair square share and stretching
+     the whole board vertically. minmax(0, 1fr) lets tracks actually
+     shrink to fit the square instead of growing to fit content. */
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  grid-template-rows: repeat(11, minmax(0, 1fr));
   aspect-ratio: 1;
   width: 100%;
-  max-width: 640px;
   margin: 0 auto;
   border: 3px solid var(--color-black);
   background: var(--color-paper);
