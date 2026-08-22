@@ -93,10 +93,8 @@ function Board({ room, game }: BoardProps) {
     <div className="board">
       <div className="board-center">
         <div className="board-center-banner">COMMUNOPOLY</div>
-        <div className="board-center-decks">
-          <div className="board-center-deck">COMMUNIST TEST</div>
-          <div className="board-center-deck">NO CHANCE</div>
-        </div>
+        <div className="board-center-deck board-center-deck-communist">COMMUNIST TEST</div>
+        <div className="board-center-deck board-center-deck-nochance">NO CHANCE</div>
       </div>
 
       {BOARD.map((tile) => {

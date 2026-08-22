@@ -19,18 +19,21 @@
 .board-center {
   grid-row: 2 / 11;
   grid-column: 2 / 11;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
   background: var(--color-paper);
   border: 2px solid var(--color-black);
   overflow: hidden;
   position: relative;
 }
 
+/* The banner is rotated, so its visual footprint is wider/taller than
+   its own unrotated box (the corners swing out) - it's positioned
+   independently of the two deck placeholders below rather than stacked
+   in flow with them, so that swing can't overlap anything. */
 .board-center-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-18deg);
   font-family: var(--font-display);
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -38,23 +41,30 @@
   background: var(--color-red);
   border: 3px solid var(--color-black);
   padding: 0.5em 2.5em;
-  transform: rotate(-18deg);
-  font-size: clamp(0.9rem, 3vw, 1.6rem);
+  font-size: clamp(0.8rem, 2.6vw, 1.5rem);
   white-space: nowrap;
-}
-
-.board-center-decks {
-  display: flex;
-  gap: 0.75rem;
+  z-index: 1;
 }
 
 .board-center-deck {
+  position: absolute;
   border: 2px dashed var(--color-grey);
   color: var(--color-grey);
   font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.5em 0.75em;
+  background: var(--color-paper);
+}
+
+.board-center-deck-communist {
+  top: 14%;
+  left: 8%;
+}
+
+.board-center-deck-nochance {
+  bottom: 14%;
+  right: 8%;
 }
 
 .board-tile {
