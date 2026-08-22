@@ -13,12 +13,14 @@ import {
   EyeIcon,
   HammerIcon,
   ParkingIcon,
+  RadiationIcon,
   StarIcon,
   TrainIcon,
 } from './BoardTileIcon';
 import { STARTING_PIECES } from '../data/pieces';
 import PieceIcon from './PieceIcon';
 import { useBoardStamps } from './useBoardStamps';
+import { useDestructionBursts } from './useDestructionBursts';
 import { useRecentTileFlashes } from './useRecentTileFlashes';
 import './Board.css';
 
@@ -95,6 +97,11 @@ function PosterStamp({ kind, style }: { kind: 'jail' | 'disappear'; style: CSSPr
       {kind === 'jail' ? 'To the Gulag' : 'Disappeared'}
     </div>
   );
+}
+
+/** A one-time radial burst over a tile the instant Chernobyl destroys it - see useDestructionBursts. The permanent radiation-hazard marker left behind afterward is .tile-destroyed, rendered inline per-tile below, not this. */
+function DestructionBurstEffect({ style }: { style: CSSProperties }) {
+  return <div className="tile-burst" style={style} />;
 }
 
 /** A small info bubble anchored over a specific tile - shared by the click-a-piece-for-owner popup and the tap-a-tile-for-its-full-name popup, since both are "a board-level overlay positioned by a tile's grid cell" (see gridPositionOf) rather than nested inside the tile itself, which would get clipped by the tile's own overflow:hidden. */
@@ -176,6 +183,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
   const awaitingDeck = game.pendingDecision?.type === 'awaitingCardDraw' ? game.pendingDecision.deck : null;
 
   const stamps = useBoardStamps(game);
+  const destructionBursts = useDestructionBursts(game);
   const tileFlashes = useRecentTileFlashes(game.log);
   // Last one wins if two flashes somehow land on the same tile in the
   // same tick - fine, it's a brief cosmetic flourish either way.
@@ -223,6 +231,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
         const owner = tile.kind === 'property' || tile.kind === 'railroad' ? ownerOf(tile.id) : null;
         const houses = game.propertyHouses[tile.id] ?? 0;
         const mortgaged = game.mortgagedTileIds.includes(tile.id);
+        const destroyed = game.destroyedTileIds.includes(tile.id);
         const occupants = game.turnOrder.filter(
           (id) => !game.players[id].isSpectating && game.players[id].position === tile.id,
         );
@@ -249,6 +258,12 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
               <div className="tile-owner-mark" style={{ background: tokenColorFor(owner) }} title="Owned" />
             )}
             {mortgaged && <div className="tile-mortgaged">MORTGAGED</div>}
+            {destroyed && (
+              <div className="tile-destroyed">
+                <RadiationIcon className="tile-destroyed-icon" />
+                DESTROYED
+              </div>
+            )}
 
             <div className="tile-body">
               {tile.kind === 'card' && <DeckIcon tile={tile} />}
@@ -314,6 +329,19 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
           <PosterStamp
             key={stamp.key}
             kind={stamp.kind}
+            style={{
+              top: `${((row - 0.5) / 11) * 100}%`,
+              left: `${((col - 0.5) / 11) * 100}%`,
+            }}
+          />
+        );
+      })}
+
+      {destructionBursts.map((burst) => {
+        const { row, col } = gridPositionOf(burst.tileId);
+        return (
+          <DestructionBurstEffect
+            key={burst.key}
             style={{
               top: `${((row - 0.5) / 11) * 100}%`,
               left: `${((col - 0.5) / 11) * 100}%`,

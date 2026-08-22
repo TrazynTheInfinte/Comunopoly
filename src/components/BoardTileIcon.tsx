@@ -142,3 +142,15 @@ export function ArrowIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** A simplified radiation trefoil - three rotationally-symmetric blades around a center dot, built from plain triangles/rotate() rather than true arcs (close enough at this size, and avoids hand-computing arc paths). Marks a Chernobyl-destroyed tile - see .tile-destroyed in Board.css. */
+export function RadiationIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 10 L7.77 2.94 L16.23 2.94 Z" />
+      <path d="M12 10 L7.77 2.94 L16.23 2.94 Z" transform="rotate(120 12 12)" />
+      <path d="M12 10 L7.77 2.94 L16.23 2.94 Z" transform="rotate(240 12 12)" />
+      <circle cx="12" cy="12" r="2.6" />
+    </svg>
+  );
+}

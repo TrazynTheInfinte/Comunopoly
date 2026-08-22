@@ -217,6 +217,12 @@ export function playSeize(): void {
   noiseBurst(0.08, 0.12);
 }
 
+/** Chernobyl Power exploding - a low sweeping thud plus a noise burst, distinct from playSeize (a quick heist-like sting) since this is meant to read as a genuine one-time disaster, not just an ordinary property changing hands. */
+export function playExplosion(): void {
+  sweep(300, 40, 0.5, 'sawtooth', 0.32);
+  noiseBurst(0.3, 0.28);
+}
+
 /** Plays the instant it becomes a player's own turn - a cue to notice even if they're not looking at the board (alt-tabbed, etc). */
 export function playYourTurn(): void {
   tone(494, 0.1, 'triangle', 0.22);
