@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { BOARD } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
 import type { BoardTile, GameState } from '../types/game';
@@ -16,6 +16,7 @@ import {
   StarIcon,
   TrainIcon,
 } from './BoardTileIcon';
+import { STARTING_PIECES } from '../data/pieces';
 import PieceIcon from './PieceIcon';
 import { useBoardStamps } from './useBoardStamps';
 import { useRecentTileFlashes } from './useRecentTileFlashes';
@@ -68,6 +69,10 @@ function gridPositionOf(id: number): { row: number; col: number } {
   return { row: id - 29, col: 11 };
 }
 
+function pieceName(pieceId: string): string {
+  return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
+}
+
 function DeckIcon({ tile }: { tile: BoardTile }) {
   if (tile.kind !== 'card') return null;
   return tile.deck === 'communistTest' ? <HammerIcon className="tile-icon" /> : <ChanceIcon className="tile-icon" />;
@@ -94,6 +99,12 @@ function PosterStamp({ kind, style }: { kind: 'jail' | 'disappear'; style: CSSPr
  * state from useStagedGame, not anything this component does itself).
  */
 function Board({ room, roomCode, playerId, game }: BoardProps) {
+  // Which occupant token (if any) currently has its owner label open -
+  // a tap/click toggles it, since a hover-only title tooltip doesn't
+  // work on touch devices at all, and works well enough on desktop that
+  // it's kept alongside this as a bonus.
+  const [openTokenId, setOpenTokenId] = useState<string | null>(null);
+
   const tokenColorFor = (id: string) => {
     const index = game.turnOrder.indexOf(id);
     return TOKEN_COLORS[index % TOKEN_COLORS.length];
@@ -118,7 +129,7 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
   const flashKindByTileId = new Map(tileFlashes.map((flash) => [flash.tileId, flash.kind]));
 
   return (
-    <div className="board">
+    <div className="board" onClick={() => setOpenTokenId(null)}>
       <div className="board-center">
         <div className="board-center-banner">COMMUNOPOLY</div>
         <button
@@ -208,7 +219,11 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
                     key={id}
                     className="tile-token"
                     style={{ background: tokenColorFor(id) }}
-                    title={`${room.players[id]?.name} (${game.players[id].pieceId})`}
+                    title={`${room.players[id]?.name} (${pieceName(game.players[id].pieceId)})`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenTokenId((current) => (current === id ? null : id));
+                    }}
                   >
                     <PieceIcon pieceId={game.players[id].pieceId} className="tile-token-icon" />
                   </span>
@@ -232,6 +247,26 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
           />
         );
       })}
+
+      {openTokenId && game.players[openTokenId] && (
+        (() => {
+          const { row, col } = gridPositionOf(game.players[openTokenId].position);
+          return (
+            <div
+              className="tile-token-owner"
+              style={{
+                top: `${((row - 0.5) / 11) * 100}%`,
+                left: `${((col - 0.5) / 11) * 100}%`,
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {room.players[openTokenId]?.name}
+              <br />
+              {pieceName(game.players[openTokenId].pieceId)}
+            </div>
+          );
+        })()
+      )}
     </div>
   );
 }

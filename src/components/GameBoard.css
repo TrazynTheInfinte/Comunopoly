@@ -25,7 +25,7 @@
        this is the first thing in normal flow (the piece info panel
        moved to the bottom of the page - see PieceInfoPanel.css), so it
        needs the same clearance that panel used to. */
-    margin-top: 2.75rem;
+    margin-top: 3rem;
   }
 }
 

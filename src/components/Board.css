@@ -383,11 +383,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  /* clamp() rather than a fixed size (or a size that only changes at a
+     breakpoint) so the token scales continuously with the board itself
+     - on a narrow phone the whole 11x11 grid is much smaller, and a
+     fixed 40px token would overflow a tile a fraction of that size. */
+  width: clamp(18px, 6vw, 40px);
+  height: clamp(18px, 6vw, 40px);
   border-radius: 50%;
   border: 2px solid var(--color-black);
   color: var(--color-paper);
+  cursor: pointer;
   /* Fakes a lit dome (light top-left, dark bottom-right) plus a drop
      shadow underneath, so the token reads as a small raised piece
      sitting up off the board instead of a flat sticker - no image
@@ -402,9 +407,31 @@
 }
 
 .tile-token-icon {
-  width: 24px;
-  height: 24px;
+  width: clamp(11px, 3.6vw, 24px);
+  height: clamp(11px, 3.6vw, 24px);
   filter: drop-shadow(0 1px 0.5px rgba(17, 17, 17, 0.5));
+}
+
+/* Owner label for a tapped/clicked token - see the openTokenId state
+   in Board.tsx. Rendered as a sibling of the tile grid (like
+   PosterStamp) rather than nested inside the tile itself, since tiles
+   clip overflow and this needs to float above one, not be squeezed
+   inside its tiny box. */
+.tile-token-owner {
+  position: absolute;
+  transform: translate(-50%, -160%);
+  z-index: 15;
+  cursor: default;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--color-black);
+  background: var(--color-paper);
+  border: 2px solid var(--color-black);
+  padding: 0.3em 0.6em;
+  box-shadow: 2px 2px 0 rgba(17, 17, 17, 0.3);
 }
 
 /* Plays every time a token's displayed tile changes (see
