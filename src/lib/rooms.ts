@@ -1,4 +1,6 @@
 import {
+  deleteDoc,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -25,8 +27,8 @@ function randomRoomCode(): string {
   return code;
 }
 
-/** Picks a random Piece not already claimed by anyone in the room - null if none are left. */
-function pickAvailablePiece(claimedPieceIds: (PieceId | null)[]): PieceId | null {
+/** Picks a random Piece not already claimed by anyone in the room - null if none are left. Exported for startNewMatch (gameSync.ts), which assigns one to every current player the same way experienced-mode joining already does. */
+export function pickAvailablePiece(claimedPieceIds: (PieceId | null)[]): PieceId | null {
   const available = STARTING_PIECES.map((piece) => piece.id).filter(
     (id) => !claimedPieceIds.includes(id),
   );
@@ -127,6 +129,33 @@ export async function choosePiece(
   await updateDoc(roomRef, {
     [`players.${playerId}.pieceId`]: pieceId,
   });
+}
+
+/**
+ * A non-host player leaving a Room that keeps existing for everyone
+ * else - removes just this player's own entry from `players`. The
+ * caller (LobbyScreen/EndgameResultsScreen) is responsible for also
+ * navigating this player back to the landing screen afterward (see
+ * App.tsx's onLeaveRoom) - this only touches the shared Firestore
+ * state, not anything local to this browser.
+ */
+export async function leaveRoom(roomCode: string, playerId: string): Promise<void> {
+  await updateDoc(doc(db, 'rooms', roomCode), {
+    [`players.${playerId}`]: deleteField(),
+  });
+}
+
+/**
+ * The host closing a Room entirely - deletes the Room document outright
+ * (not just its `game` field, unlike gameSync.ts's endGameEntirely).
+ * Every connected client (host included) picks this up automatically
+ * through their own live subscription: RoomView already treats "the
+ * room I'm subscribed to no longer exists" as a signal to leave (see
+ * onLeaveRoom/onRoomNotFound), originally built for a stale rejoin-
+ * after-refresh, but it's exactly the right reaction here too.
+ */
+export async function closeLobby(roomCode: string): Promise<void> {
+  await deleteDoc(doc(db, 'rooms', roomCode));
 }
 
 /**

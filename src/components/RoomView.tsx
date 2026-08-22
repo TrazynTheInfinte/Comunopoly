@@ -8,8 +8,15 @@ import { usePresenceHeartbeat } from './usePresenceHeartbeat';
 interface RoomViewProps {
   roomCode: string;
   playerId: string;
-  /** Called once we're sure this room genuinely doesn't exist (as opposed to just not having loaded yet) - e.g. a stale room code restored from a previous session. Lets App.tsx fall back to the landing screen instead of leaving this stuck on "Loading room...". */
-  onRoomNotFound: () => void;
+  /**
+   * Called once we're sure this player is done with this room - either
+   * automatically, the moment it's confirmed to genuinely no longer
+   * exist (a stale rejoin from a previous session, or the host just
+   * closed it), or because LobbyScreen/EndgameResultsScreen call it
+   * after this player explicitly leaves. Lets App.tsx fall back to the
+   * landing screen instead of leaving this stuck on "Loading room...".
+   */
+  onLeaveRoom: () => void;
 }
 
 /**
@@ -18,7 +25,7 @@ interface RoomViewProps {
  * (i.e. once room.game exists). Both screens are "dumb" - they just
  * render whatever Room data they're handed.
  */
-function RoomView({ roomCode, playerId, onRoomNotFound }: RoomViewProps) {
+function RoomView({ roomCode, playerId, onLeaveRoom }: RoomViewProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -32,10 +39,13 @@ function RoomView({ roomCode, playerId, onRoomNotFound }: RoomViewProps) {
 
   // Runs whenever the room genuinely turns out to be missing (not just
   // "still loading") - most commonly a room code restored from a
-  // previous session that's since been abandoned/never existed.
+  // previous session that's since been abandoned/never existed, or the
+  // host just closed it out from under everyone (see lib/rooms.ts'
+  // closeLobby - deleting the Room document is exactly what this
+  // detects).
   useEffect(() => {
-    if (hasLoaded && !room) onRoomNotFound();
-  }, [hasLoaded, room, onRoomNotFound]);
+    if (hasLoaded && !room) onLeaveRoom();
+  }, [hasLoaded, room, onLeaveRoom]);
 
   // Stays mounted across the lobby -> game transition (only the child
   // below changes), so this keeps running for as long as this player is
@@ -54,9 +64,9 @@ function RoomView({ roomCode, playerId, onRoomNotFound }: RoomViewProps) {
   }
 
   return room.game ? (
-    <GameBoard room={room} roomCode={roomCode} playerId={playerId} />
+    <GameBoard room={room} roomCode={roomCode} playerId={playerId} onLeave={onLeaveRoom} />
   ) : (
-    <LobbyScreen room={room} roomCode={roomCode} playerId={playerId} />
+    <LobbyScreen room={room} roomCode={roomCode} playerId={playerId} onLeave={onLeaveRoom} />
   );
 }
 

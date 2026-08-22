@@ -37,7 +37,8 @@ function App() {
   // A room from a previous session (or before an accidental refresh)
   // restores straight back into the lobby/game instead of the landing
   // screen - see lib/playerIdentity.ts. RoomView clears this again if
-  // the room turns out to no longer exist (handleRoomNotFound below).
+  // the room turns out to no longer exist, or the player explicitly
+  // leaves/the host closes it (handleLeaveRoom below).
   const [view, setView] = useState<View>(() => (getStoredActiveRoomCode() ? 'lobby' : 'landing'));
   const [mode, setMode] = useState<Mode>('join');
   const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
@@ -86,8 +87,14 @@ function App() {
     }
   }
 
-  /** The room we tried to restore into (or were just in) turned out to no longer exist - fall back to the landing screen instead of leaving RoomView stuck. */
-  function handleRoomNotFound() {
+  /**
+   * Falls back to the landing screen - either because RoomView detected
+   * the room we tried to restore into (or were just in) no longer
+   * exists (the host closed it, or it never existed - a stale rejoin),
+   * or because this player explicitly clicked Leave Lobby somewhere.
+   * Either way, this browser has nothing more to do with that room.
+   */
+  function handleLeaveRoom() {
     clearActiveRoomCode();
     setActiveRoomCode('');
     setView('landing');
@@ -110,7 +117,7 @@ function App() {
       <>
         <BrutalistBackground />
         <SoundToggle />
-        <RoomView roomCode={activeRoomCode} playerId={playerId} onRoomNotFound={handleRoomNotFound} />
+        <RoomView roomCode={activeRoomCode} playerId={playerId} onLeaveRoom={handleLeaveRoom} />
       </>
     );
   }

@@ -98,6 +98,18 @@ button:disabled {
   background: var(--color-grey);
 }
 
+/* A destructive/irreversible action (closing a Room, ending a match
+   entirely) - visually distinct from the normal red buttons everywhere
+   else, so it doesn't blend in as just another routine action. */
+.danger-button {
+  background: var(--color-black);
+  border-color: var(--color-red);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: var(--color-red);
+}
+
 .loading {
   display: flex;
   align-items: center;

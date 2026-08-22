@@ -1,6 +1,9 @@
 import { deleteField, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { STARTING_PIECES } from '../data/pieces';
+import { pickAvailablePiece } from './rooms';
 import type { CardDeck, GameState, PieceId } from '../types/game';
+import type { Room } from '../types/room';
 import {
   acceptVolgaOffer,
   accuseOfTrotsky,
@@ -70,6 +73,30 @@ export async function startGame(
  */
 export async function endGameEntirely(roomCode: string) {
   await updateDoc(doc(db, 'rooms', roomCode), { game: deleteField() });
+}
+
+/**
+ * Starts a fresh match with everyone currently in the room, skipping
+ * the Lobby entirely - offered on the Endgame results screen so a
+ * rematch doesn't mean re-picking Pieces one at a time. Always assigns
+ * random Pieces the way "experienced" mode does (and sets the room's
+ * mode to match, so it stays consistent if the host ever goes back to
+ * a normal Lobby afterward) - everyone here has already played a full
+ * game, so there's no reason to make them pick blind again.
+ */
+export async function startNewMatch(roomCode: string, room: Room) {
+  const claimed: PieceId[] = [];
+  const assignments: { playerId: string; pieceId: PieceId }[] = [];
+  for (const playerId of Object.keys(room.players).slice(0, STARTING_PIECES.length)) {
+    const pieceId = pickAvailablePiece(claimed);
+    if (!pieceId) break; // more players than Pieces exist - shouldn't happen, but don't crash if it does
+    claimed.push(pieceId);
+    assignments.push({ playerId, pieceId });
+  }
+  await updateDoc(doc(db, 'rooms', roomCode), {
+    mode: 'experienced',
+    game: createInitialGameState(assignments),
+  });
 }
 
 export async function rollDiceAndSync(roomCode: string, game: GameState) {

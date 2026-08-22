@@ -80,6 +80,10 @@
   gap: 0.15em;
 }
 
+.lobby-leave-actions {
+  margin-top: 1rem;
+}
+
 .piece-picker-title {
   font-family: var(--font-mono);
   font-weight: 400;

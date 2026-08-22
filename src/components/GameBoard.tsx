@@ -40,6 +40,8 @@ interface GameBoardProps {
   room: Room;
   roomCode: string;
   playerId: string;
+  /** Passed straight through to EndgameResultsScreen (see RoomView) - unused otherwise, since there's no leave-mid-game affordance, only from the Lobby and the Endgame results screen. */
+  onLeave: () => void;
 }
 
 function pieceName(pieceId: string): string {
@@ -50,7 +52,7 @@ function pieceName(pieceId: string): string {
 // file past that is still the plain functional readout (status, actions,
 // decision prompts, event log) - that part isn't a placeholder, it's
 // just not meant to be pretty, since decisions need to stay legible.
-function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
+function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
   const [rollTrigger, setRollTrigger] = useState(0);
@@ -77,7 +79,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   if (!game) return null;
 
   if (game.endgame?.results) {
-    return <EndgameResultsScreen room={room} game={game} />;
+    return <EndgameResultsScreen room={room} game={game} roomCode={roomCode} playerId={playerId} onLeave={onLeave} />;
   }
 
   const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];

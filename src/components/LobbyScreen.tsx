@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { STARTING_PIECES } from '../data/pieces';
 import { startGame } from '../lib/gameSync';
 import { isPlayerAway } from '../lib/presence';
-import { choosePiece } from '../lib/rooms';
+import { choosePiece, closeLobby, leaveRoom } from '../lib/rooms';
 import type { PieceId } from '../types/game';
 import type { Room } from '../types/room';
 import './LobbyScreen.css';
@@ -11,13 +11,15 @@ interface LobbyScreenProps {
   room: Room;
   roomCode: string;
   playerId: string;
+  /** Navigates this browser back to the landing screen - see RoomView's onLeaveRoom. Closing the lobby (host) doesn't need to call this directly; deleting the Room triggers it automatically for everyone, including the host's own client. */
+  onLeave: () => void;
 }
 
 function pieceName(pieceId: PieceId): string {
   return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
 }
 
-function LobbyScreen({ room, roomCode, playerId }: LobbyScreenProps) {
+function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
   const [error, setError] = useState('');
   const players = Object.entries(room.players);
   const isHost = room.hostId === playerId;
@@ -39,6 +41,16 @@ function LobbyScreen({ room, roomCode, playerId }: LobbyScreenProps) {
       .filter(([, player]) => player.pieceId !== null)
       .map(([id, player]) => ({ playerId: id, pieceId: player.pieceId! }));
     void startGame(roomCode, assignments);
+  }
+
+  function handleCloseLobby() {
+    if (!window.confirm('Close this Room for everyone? This cannot be undone.')) return;
+    void closeLobby(roomCode);
+  }
+
+  async function handleLeaveLobby() {
+    await leaveRoom(roomCode, playerId);
+    onLeave();
   }
 
   return (
@@ -96,6 +108,16 @@ function LobbyScreen({ room, roomCode, playerId }: LobbyScreenProps) {
       {isHost && players.length > 0 && !everyoneHasAPiece && (
         <p className="lobby-hint">Waiting for everyone to have a Piece.</p>
       )}
+
+      <div className="lobby-leave-actions">
+        {isHost ? (
+          <button className="danger-button" onClick={handleCloseLobby}>
+            Close Lobby
+          </button>
+        ) : (
+          <button onClick={handleLeaveLobby}>Leave Lobby</button>
+        )}
+      </div>
     </main>
   );
 }
