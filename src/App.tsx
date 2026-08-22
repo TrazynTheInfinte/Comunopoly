@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import './App.css';
+import AppHeader from './components/AppHeader';
 import BrutalistBackground from './components/BrutalistBackground';
 import RoomView from './components/RoomView';
-import SoundToggle from './components/SoundToggle';
 import { createRoom, joinRoom } from './lib/rooms';
 import {
   clearActiveRoomCode,
@@ -116,7 +116,7 @@ function App() {
     return (
       <>
         <BrutalistBackground />
-        <SoundToggle />
+        <AppHeader showRuleBook />
         <RoomView roomCode={activeRoomCode} playerId={playerId} onLeaveRoom={handleLeaveRoom} />
       </>
     );
@@ -125,7 +125,7 @@ function App() {
   return (
     <main className="app">
       <BrutalistBackground />
-      <SoundToggle />
+      <AppHeader />
       <p className="build-badge">build {__BUILD_SHA__}</p>
       <h1 className="title">COMUNOPOLY</h1>
       <p className="subtitle">The People's Monopoly</p>

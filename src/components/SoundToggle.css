@@ -1,12 +1,7 @@
 .sound-toggle {
-  position: fixed;
-  top: 0.75rem;
-  left: 0.75rem;
-  z-index: 10;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: 0.7rem;
 }
 
 .sound-toggle button {
@@ -27,26 +22,6 @@
 }
 
 @media (max-width: 900px) {
-  /* Becomes a full-width opaque header bar rather than a corner-
-     floating control - a transparent-background pair floating over
-     whatever's underneath doesn't read well once everything else on
-     the page is also full-width (there's no empty corner for it to
-     "float" in on mobile the way there is on desktop). */
-  .sound-toggle {
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    box-sizing: border-box;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    background: var(--color-paper);
-    border-bottom: 3px solid var(--color-black);
-    padding: 0.4rem 0.5rem;
-    font-size: 0.6rem;
-  }
-
   .sound-toggle button {
     padding: 0.4em 0.7em;
   }
