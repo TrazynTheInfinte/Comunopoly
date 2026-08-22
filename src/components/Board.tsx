@@ -17,6 +17,8 @@ import {
   TrainIcon,
 } from './BoardTileIcon';
 import PieceIcon from './PieceIcon';
+import { useBoardStamps } from './useBoardStamps';
+import { useRecentTileFlashes } from './useRecentTileFlashes';
 import './Board.css';
 
 interface BoardProps {
@@ -71,6 +73,15 @@ function DeckIcon({ tile }: { tile: BoardTile }) {
   return tile.deck === 'communistTest' ? <HammerIcon className="tile-icon" /> : <ChanceIcon className="tile-icon" />;
 }
 
+/** A rubber-stamp-style flourish over a jailed/Disappeared player's tile - see useBoardStamps for how the moment is detected. */
+function PosterStamp({ kind, style }: { kind: 'jail' | 'disappear'; style: CSSProperties }) {
+  return (
+    <div className={`board-stamp board-stamp-${kind}`} style={style}>
+      {kind === 'jail' ? 'To the Gulag' : 'Disappeared'}
+    </div>
+  );
+}
+
 /**
  * The actual 40-tile board, laid out as a physical Monopoly-style square
  * (not the plain text readout that's still shown below it for actions/
@@ -100,6 +111,12 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
   // only clickable for whoever's turn it actually is.
   const awaitingDeck = game.pendingDecision?.type === 'awaitingCardDraw' ? game.pendingDecision.deck : null;
 
+  const stamps = useBoardStamps(game);
+  const tileFlashes = useRecentTileFlashes(game.log);
+  // Last one wins if two flashes somehow land on the same tile in the
+  // same tick - fine, it's a brief cosmetic flourish either way.
+  const flashKindByTileId = new Map(tileFlashes.map((flash) => [flash.tileId, flash.kind]));
+
   return (
     <div className="board">
       <div className="board-center">
@@ -110,6 +127,7 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
           disabled={!isMyTurn || awaitingDeck !== 'communistTest'}
           onClick={() => drawFromPileAndSync(roomCode, game)}
         >
+          <HammerIcon className="board-center-deck-icon" />
           COMMUNIST TEST
         </button>
         <button
@@ -118,6 +136,7 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
           disabled={!isMyTurn || awaitingDeck !== 'noChance'}
           onClick={() => drawFromPileAndSync(roomCode, game)}
         >
+          <ChanceIcon className="board-center-deck-icon" />
           NO CHANCE
         </button>
       </div>
@@ -131,11 +150,12 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
         const occupants = game.turnOrder.filter(
           (id) => !game.players[id].isSpectating && game.players[id].position === tile.id,
         );
+        const flashKind = flashKindByTileId.get(tile.id);
 
         return (
           <div
             key={tile.id}
-            className={`board-tile board-tile-${tile.kind} board-tile-${side}`}
+            className={`board-tile board-tile-${tile.kind} board-tile-${side} ${flashKind ? `tile-flash-${flashKind}` : ''}`}
             style={{
               gridRow: row,
               gridColumn: col,
@@ -196,6 +216,20 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
               </div>
             )}
           </div>
+        );
+      })}
+
+      {stamps.map((stamp) => {
+        const { row, col } = gridPositionOf(stamp.tileId);
+        return (
+          <PosterStamp
+            key={stamp.key}
+            kind={stamp.kind}
+            style={{
+              top: `${((row - 0.5) / 11) * 100}%`,
+              left: `${((col - 0.5) / 11) * 100}%`,
+            }}
+          />
         );
       })}
     </div>

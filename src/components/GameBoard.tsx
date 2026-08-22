@@ -14,6 +14,7 @@ import {
 } from '../lib/gameSync';
 import { playCardDraw } from '../lib/sound';
 import type { Room } from '../types/room';
+import AnimatedNumber from './AnimatedNumber';
 import Board from './Board';
 import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
@@ -148,9 +149,21 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
                     {room.players[id]?.name} ({pieceName(player.pieceId)})
                   </span>
                   <span className="player-roubles">
-                    ₽{player.roubles}
-                    {(player.westRoubles > 0 || player.pendingWestRoubles > 0) &&
-                      ` (West: ₽${player.westRoubles}${player.pendingWestRoubles > 0 ? ` + ₽${player.pendingWestRoubles} waiting` : ''})`}
+                    ₽<AnimatedNumber value={player.roubles} />
+                    {(player.westRoubles > 0 || player.pendingWestRoubles > 0) && (
+                      <>
+                        {' (West: ₽'}
+                        <AnimatedNumber value={player.westRoubles} />
+                        {player.pendingWestRoubles > 0 && (
+                          <>
+                            {' + ₽'}
+                            <AnimatedNumber value={player.pendingWestRoubles} />
+                            {' waiting'}
+                          </>
+                        )}
+                        {')'}
+                      </>
+                    )}
                   </span>
                   <span className="player-position">
                     {player.isSpectating ? 'Spectating' : getTile(player.position).name}
