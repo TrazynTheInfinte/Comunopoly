@@ -3,8 +3,10 @@ import { afkSkipTurnAndSync, confirmStillHereAndSync } from '../lib/gameSync';
 import { playAfkAlert } from '../lib/sound';
 import type { GameState } from '../types/game';
 
-const IDLE_BEFORE_PROMPT_MS = 30_000;
-const RESPONSE_WINDOW_MS = 10_000;
+// Doubled from the original 30s/10s after early playtest feedback that
+// this was too trigger-happy.
+const IDLE_BEFORE_PROMPT_MS = 60_000;
+const RESPONSE_WINDOW_MS = 20_000;
 
 export interface AfkPrompt {
   /** Whether the "are you still there?" prompt should currently be shown. */

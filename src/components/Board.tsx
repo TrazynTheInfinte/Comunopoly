@@ -177,7 +177,8 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
     return null;
   };
 
-  const isMyTurn = game.turnOrder[game.currentTurnIndex] === playerId;
+  const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];
+  const isMyTurn = currentTurnPlayerId === playerId;
   // Visible to everyone watching (the glow is shared game state), but
   // only clickable for whoever's turn it actually is.
   const awaitingDeck = game.pendingDecision?.type === 'awaitingCardDraw' ? game.pendingDecision.deck : null;
@@ -305,7 +306,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
                 {occupants.map((id) => (
                   <span
                     key={id}
-                    className="tile-token"
+                    className={`tile-token ${id === currentTurnPlayerId ? 'is-current-turn' : ''}`}
                     style={{ background: tokenColorFor(id) }}
                     title={`${room.players[id]?.name} (${pieceName(game.players[id].pieceId)})`}
                     onClick={(event) => {

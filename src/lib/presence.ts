@@ -8,7 +8,9 @@ import type { RoomPlayer } from '../types/room';
 // detection (nothing fires the moment a tab actually closes), just this
 // polling-by-writes approximation.
 export const HEARTBEAT_INTERVAL_MS = 15_000;
-const AWAY_THRESHOLD_MS = 40_000;
+// Doubled from the original 40s after early playtest feedback that the
+// AFK system overall was too trigger-happy.
+const AWAY_THRESHOLD_MS = 80_000;
 
 /** True if this player's last heartbeat is stale enough to show as away. A player who's never sent one (joined before this existed, or hasn't had a chance to yet) is treated as present rather than immediately flagged away. */
 export function isPlayerAway(player: RoomPlayer): boolean {

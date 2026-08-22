@@ -552,6 +552,35 @@
   filter: drop-shadow(0 1px 0.5px rgba(17, 17, 17, 0.5));
 }
 
+/* Whoever's turn it currently is, glows on the board itself - playtest
+   feedback that there was no way to tell at a glance without reading
+   the sidebar or the "Your turn" text. Layers a pulsing red ring on
+   top of the token's existing drop-shadow (both animations run at
+   once) rather than replacing it. */
+.tile-token.is-current-turn {
+  animation:
+    tile-token-hop 0.16s ease-out,
+    tile-token-glow 1.4s ease-in-out infinite;
+}
+
+@keyframes tile-token-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 3px 0 rgba(17, 17, 17, 0.55),
+      0 5px 5px rgba(17, 17, 17, 0.4),
+      0 0 0 2px var(--color-red),
+      0 0 10px 4px rgba(179, 0, 0, 0.7);
+  }
+  50% {
+    box-shadow:
+      0 3px 0 rgba(17, 17, 17, 0.55),
+      0 5px 5px rgba(17, 17, 17, 0.4),
+      0 0 0 2px var(--color-red),
+      0 0 18px 8px rgba(179, 0, 0, 0.9);
+  }
+}
+
 /* Shared bubble for BoardPopup (a tapped/clicked token's owner, or a
    tapped/clicked tile's full name) - see Board.tsx. Rendered as a
    sibling of the tile grid (like PosterStamp) rather than nested

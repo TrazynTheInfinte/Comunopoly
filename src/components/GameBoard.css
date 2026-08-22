@@ -223,6 +223,17 @@
 .player-summary li.is-current {
   background: var(--color-red);
   color: var(--color-paper);
+  animation: player-summary-glow 1.4s ease-in-out infinite;
+}
+
+@keyframes player-summary-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--color-red);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(179, 0, 0, 0.8);
+  }
 }
 
 .actions {

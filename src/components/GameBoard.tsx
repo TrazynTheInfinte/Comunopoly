@@ -37,6 +37,7 @@ import SmuggleOfferPrompt from './SmuggleOfferPrompt';
 import { useAfkSelfCheck } from './useAfkSelfCheck';
 import { useGameMusic } from './useGameMusic';
 import { useHostAfkWatchdog } from './useHostAfkWatchdog';
+import { useIsDesktop } from './useIsDesktop';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
 import { useYourTurnChime } from './useYourTurnChime';
@@ -73,6 +74,11 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   // buttons themselves stay hidden, so this state is simply inert on a
   // wide screen rather than needing its own "are we on mobile" check.
   const [mobileTab, setMobileTab] = useState<'board' | 'status'>('board');
+  // Drives the desktop-only dice-roller/propaganda-banner swap below
+  // (playtest feedback) - see useIsDesktop for why this needs to be a
+  // real JS check rather than pure CSS: only one DiceRoller can ever be
+  // mounted at a time, or its sound effects would double up.
+  const isDesktop = useIsDesktop();
   // Delays revealing anything about a state update besides the mover's
   // token walking there, so a card that Disappears the drawer (or any
   // other landing effect) doesn't seem to happen before their piece has
@@ -404,11 +410,19 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               ))}
           </ul>
 
-          <img
-            className="propaganda-banner"
-            src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
-            alt="Capitalism has no future. Fight for communism."
-          />
+          {/* Desktop swaps places with the dice roller below (feedback
+              from an early playtest) - mobile keeps the banner here and
+              the dice roller next to the board, since that one needs to
+              stay visible on the "Board" tab while a roll plays out. */}
+          {isDesktop ? (
+            <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
+          ) : (
+            <img
+              className="propaganda-banner"
+              src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
+              alt="Capitalism has no future. Fight for communism."
+            />
+          )}
 
           {isDevPanelUnlocked && <DevPanel room={room} roomCode={roomCode} game={game} />}
         </section>
@@ -427,7 +441,15 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
           {/* Live, not staged - the dice should start tumbling the
               instant a roll happens, not wait for the token's walk to
               finish revealing everything else. */}
-          <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
+          {isDesktop ? (
+            <img
+              className="propaganda-banner"
+              src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
+              alt="Capitalism has no future. Fight for communism."
+            />
+          ) : (
+            <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
+          )}
         </div>
       </div>
 

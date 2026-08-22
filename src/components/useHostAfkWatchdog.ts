@@ -7,7 +7,9 @@ import type { Room } from '../types/room';
 // Extra buffer on top of however stale a heartbeat already has to be to
 // count as "away" (see lib/presence.ts) - avoids skipping someone the
 // instant their heartbeat crosses that threshold on an ordinary hiccup.
-const AWAY_GRACE_MS = 15_000;
+// Doubled from the original 15s after early playtest feedback that the
+// whole AFK system was too trigger-happy.
+const AWAY_GRACE_MS = 30_000;
 
 /**
  * Host-only safety net for a player who's actually disconnected, not
