@@ -13,6 +13,10 @@ dist-ssr
 *.local
 *.tsbuildinfo
 
+# Raw soundtrack sources (large .wav files) - only the compressed .mp3
+# versions in public/audio/ actually ship; keep the originals local.
+/soundtracks import/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

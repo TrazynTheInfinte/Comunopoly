@@ -54,7 +54,7 @@ export function wireAutoInitOnFirstInteraction(): void {
   if (typeof document === 'undefined') return;
   const handler = () => {
     initAudio();
-    if (!muted) startMusic();
+    if (!muted) startMenuMusic();
     document.removeEventListener('pointerdown', handler);
   };
   document.addEventListener('pointerdown', handler, { once: true });
@@ -68,11 +68,24 @@ export function setMuted(value: boolean): void {
   muted = value;
   localStorage.setItem(MUTE_STORAGE_KEY, String(value));
   if (masterGain) masterGain.gain.value = value ? 0 : 1;
+
   if (value) {
-    stopMusic();
+    stopMenuMusic();
+    gameMusicEl?.pause();
+    return;
+  }
+
+  initAudio();
+  // Resume whichever was actually supposed to be playing - a game
+  // already in progress (gameMusicMode survives muting, even though
+  // actual playback was paused while muted) takes priority over
+  // falling back to menu music. Resumes the same paused track rather
+  // than picking a new one, same as hitting "play" again on any paused
+  // <audio> element.
+  if (gameMusicMode && gameMusicEl) {
+    gameMusicEl.play().catch(() => {});
   } else {
-    initAudio();
-    startMusic();
+    startMenuMusic();
   }
 }
 
@@ -230,9 +243,9 @@ const TRACKS: Note[][] = [
 
 const BEAT_SECONDS = 0.33;
 
-let musicTimer: ReturnType<typeof setTimeout> | null = null;
-let musicPlaying = false;
-let lastTrackIndex = -1;
+let menuMusicTimer: ReturnType<typeof setTimeout> | null = null;
+let menuMusicPlaying = false;
+let lastMenuTrackIndex = -1;
 
 function playTrack(track: Note[]): number {
   const ctx = ensureContext();
@@ -257,30 +270,121 @@ function playTrack(track: Note[]): number {
   return t - ctx.currentTime;
 }
 
-/** Starts (or continues) the shuffling background-music loop. No-op if already playing or muted. */
-export function startMusic(): void {
-  if (musicPlaying || muted) return;
+/** Starts (or continues) the shuffling menu-music loop. No-op if already playing or muted. Menu music only - see startGameMusic/startFinalRoundMusic for the real-audio-file tracks that play once a game's actually underway. */
+export function startMenuMusic(): void {
+  if (menuMusicPlaying || muted) return;
   const ctx = ensureContext();
   if (!ctx) return;
-  musicPlaying = true;
+  menuMusicPlaying = true;
 
   const loop = () => {
-    if (!musicPlaying) return;
+    if (!menuMusicPlaying) return;
     let index = Math.floor(Math.random() * TRACKS.length);
-    if (TRACKS.length > 1 && index === lastTrackIndex) {
+    if (TRACKS.length > 1 && index === lastMenuTrackIndex) {
       index = (index + 1) % TRACKS.length;
     }
-    lastTrackIndex = index;
+    lastMenuTrackIndex = index;
     const duration = playTrack(TRACKS[index]);
-    musicTimer = setTimeout(loop, duration * 1000 + 500);
+    menuMusicTimer = setTimeout(loop, duration * 1000 + 500);
   };
   loop();
 }
 
-export function stopMusic(): void {
-  musicPlaying = false;
-  if (musicTimer) {
-    clearTimeout(musicTimer);
-    musicTimer = null;
+export function stopMenuMusic(): void {
+  menuMusicPlaying = false;
+  if (menuMusicTimer) {
+    clearTimeout(menuMusicTimer);
+    menuMusicTimer = null;
+  }
+}
+
+// --- Background music: real tracks for in-game play -----------------------
+//
+// Two pools of real audio files (public/audio/), supplied rather than
+// synthesized: "standard" tracks shuffle continuously during normal
+// play, same idea as the menu's procedural loop; once the Endgame's
+// final lap starts, one "final" track is chosen at random and just
+// loops for the rest of the match instead of continuing to shuffle.
+// Plain <audio> elements rather than the Web Audio graph above - these
+// are multi-minute files, and <audio> streams them instead of decoding
+// the whole thing into memory up front the way Web Audio's
+// decodeAudioData would.
+
+const STANDARD_TRACK_URLS = ['standard-1.mp3', 'standard-2.mp3', 'standard-3.mp3'].map(
+  (name) => `${import.meta.env.BASE_URL}audio/${name}`,
+);
+const FINAL_TRACK_URLS = ['final-1.mp3', 'final-2.mp3', 'final-3.mp3'].map(
+  (name) => `${import.meta.env.BASE_URL}audio/${name}`,
+);
+const GAME_MUSIC_VOLUME = 0.35;
+
+let gameMusicEl: HTMLAudioElement | null = null;
+let gameMusicMode: 'standard' | 'final' | null = null;
+let lastStandardTrackUrl: string | null = null;
+
+function ensureGameMusicElement(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null;
+  if (!gameMusicEl) {
+    gameMusicEl = new Audio();
+    gameMusicEl.volume = GAME_MUSIC_VOLUME;
+  }
+  return gameMusicEl;
+}
+
+/** Plays (if not muted - but always picks/sets up the track either way, so unmuting later resumes correctly) a new random standard track, avoiding an immediate repeat. */
+function playStandardTrack(): void {
+  const el = ensureGameMusicElement();
+  if (!el) return;
+  let url = STANDARD_TRACK_URLS[Math.floor(Math.random() * STANDARD_TRACK_URLS.length)];
+  if (STANDARD_TRACK_URLS.length > 1 && url === lastStandardTrackUrl) {
+    const currentIndex = STANDARD_TRACK_URLS.indexOf(url);
+    url = STANDARD_TRACK_URLS[(currentIndex + 1) % STANDARD_TRACK_URLS.length];
+  }
+  lastStandardTrackUrl = url;
+  el.loop = false;
+  el.src = url;
+  if (muted) return;
+  el.play().catch(() => {
+    // Refused (no gesture yet, still loading, etc.) - harmless, whatever
+    // triggers next (a click, the next call) will retry.
+  });
+}
+
+/**
+ * Shuffles continuously among the "standard" gameplay tracks - each one
+ * plays once through, then a different one is picked. Call once when a
+ * game actually starts. Sets up the track even while muted, so the
+ * "resume where we left off" logic in setMuted has something to resume.
+ */
+export function startGameMusic(): void {
+  const el = ensureGameMusicElement();
+  if (!el) return;
+  if (gameMusicMode === 'standard') return; // already doing this
+  gameMusicMode = 'standard';
+  el.onended = () => {
+    if (gameMusicMode === 'standard') playStandardTrack();
+  };
+  playStandardTrack();
+}
+
+/** Switches to a single randomly-chosen "final round" track, looped for the rest of the match. Call once when the Endgame's final lap begins. */
+export function startFinalRoundMusic(): void {
+  const el = ensureGameMusicElement();
+  if (!el) return;
+  if (gameMusicMode === 'final') return; // already doing this
+  gameMusicMode = 'final';
+  el.onended = null;
+  el.loop = true;
+  el.src = FINAL_TRACK_URLS[Math.floor(Math.random() * FINAL_TRACK_URLS.length)];
+  if (muted) return;
+  el.play().catch(() => {});
+}
+
+/** Stops whichever in-game track (standard or final) is currently playing. Call when leaving a game back to the lobby/menu. */
+export function stopGameMusic(): void {
+  gameMusicMode = null;
+  if (gameMusicEl) {
+    gameMusicEl.onended = null;
+    gameMusicEl.pause();
   }
 }

@@ -29,6 +29,7 @@ import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import { useGameMusic } from './useGameMusic';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
 import './GameBoard.css';
@@ -61,6 +62,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   // an empty array is a harmless placeholder for the one render where
   // game isn't available yet.
   useSoundEvents(game?.log ?? []);
+  useGameMusic(game);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
