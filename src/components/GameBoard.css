@@ -52,9 +52,12 @@
 .dice-column {
   min-width: 0;
   /* Clears the fixed-position piece info panel floating over the
-     top-right corner of the page - without this, the dice roller's top
-     edge sits right underneath it. */
-  margin-top: 9.5rem;
+     top-right corner of the page. That panel's height isn't fixed - it
+     grows with each Piece's Win Condition text, and some (T-Rex's,
+     especially) run considerably longer than others - so this is sized
+     for the longest one plus room to spare, not just whatever happened
+     to be showing when this was last tuned. */
+  margin-top: 15rem;
 }
 
 @media (max-width: 900px) {
