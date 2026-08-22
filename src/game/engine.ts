@@ -20,6 +20,9 @@ const RAILROAD_RENT_BY_COUNT = [25, 50, 100, 200];
 const JAIL_POSITION = 10;
 const JAIL_BRIBE = 100;
 const MAX_DOUBLES_BEFORE_JAIL = 3;
+// House rules: hoarding over this much sends you straight to jail, and
+// you can't leave jail (by any means) while still over it.
+const OVER_ROUBLES_JAIL_LIMIT = 1000;
 const CHERNOBYL_TILE_ID = 12;
 const VOLGA_TILE_ID = 28;
 const KREMLIN_TILE_ID = 37;
@@ -72,6 +75,7 @@ export function createInitialGameState(
       pendingWestRoubles: 0,
       isSpectating: false,
       sentToJailCount: 0,
+      doublesRolledCount: 0,
     };
   }
 
@@ -81,7 +85,6 @@ export function createInitialGameState(
     players,
     lastRoll: null,
     lastRollWasDoubles: false,
-    doublesCount: 0,
     pendingDecision: null,
     forcedRoll: null,
     chernobylCountdown: null,
@@ -388,13 +391,34 @@ function giveRoubles(
   amount: number,
 ): GameState {
   const player = state.players[playerId];
-  return {
+  const next: GameState = {
     ...state,
     players: {
       ...state.players,
       [playerId]: { ...player, roubles: player.roubles + amount },
     },
   };
+  // House rule: over 1000 roubles sends you straight to jail. Only
+  // checked on a gain, not a payment - roubles going down can't newly
+  // cross the limit, so there's nothing to catch there.
+  return amount > 0 ? applyOverRoublesJailRule(next, playerId) : next;
+}
+
+/** House rule: hoarding over 1000 roubles sends you straight to jail. Also used directly by the Dev Panel's "set roubles" tool, so a manually-set balance can't leave the game in a state this rule wouldn't otherwise allow. */
+function applyOverRoublesJailRule(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  if (player.roubles > OVER_ROUBLES_JAIL_LIMIT && !player.inJail) {
+    return logEvent(
+      sendToJail(state, playerId),
+      `Amassed over ${OVER_ROUBLES_JAIL_LIMIT} roubles - sent to jail!`,
+    );
+  }
+  return state;
+}
+
+/** House rule: you can't leave jail (by any means - doubles, Denounce Your Collaborators, a Show Trial release) while still over the 1000-rouble limit; it sends you straight back in instead. */
+function canLeaveJail(state: GameState, playerId: string): boolean {
+  return state.players[playerId].roubles <= OVER_ROUBLES_JAIL_LIMIT;
 }
 
 function payRoubles(
@@ -491,6 +515,7 @@ function disappearPlayer(
         isTrotsky: false,
         westRoubles: 0,
         pendingWestRoubles: 0,
+        doublesRolledCount: 0,
       },
     },
   };
@@ -1545,9 +1570,12 @@ function resolveJailRoll(
 ): GameState {
   // Being in jail suspends the doubles-roll-again and 3-doubles-to-jail
   // rules entirely - "except while in jail," per the source rules.
-  const next: GameState = { ...state, lastRollWasDoubles: false, doublesCount: 0 };
+  const next: GameState = { ...state, lastRollWasDoubles: false };
 
   if (isDoubles) {
+    if (!canLeaveJail(next, playerId)) {
+      return logEvent(next, 'Rolled doubles, but have over 1000 roubles - stayed locked up.');
+    }
     const escaped: GameState = {
       ...next,
       players: {
@@ -1610,17 +1638,35 @@ export function rollDice(
     return resolveJailRoll(next, playerId, die1, die2, isDoubles, steps, rng);
   }
 
-  const doublesCount = isDoubles ? state.doublesCount + 1 : 0;
-  if (isDoubles && doublesCount >= MAX_DOUBLES_BEFORE_JAIL) {
-    next = { ...next, doublesCount: 0, lastRollWasDoubles: false };
-    next = sendToJail(next, playerId);
-    return logEvent(
-      next,
-      'Rolled doubles three times in a row - sent to jail!',
-    );
+  if (isDoubles) {
+    const doublesRolledCount = player.doublesRolledCount + 1;
+    if (doublesRolledCount >= MAX_DOUBLES_BEFORE_JAIL) {
+      next = {
+        ...next,
+        lastRollWasDoubles: false,
+        players: {
+          ...next.players,
+          [playerId]: { ...next.players[playerId], doublesRolledCount: 0 },
+        },
+      };
+      next = sendToJail(next, playerId);
+      return logEvent(
+        next,
+        `Rolled doubles ${MAX_DOUBLES_BEFORE_JAIL} times - sent to jail!`,
+      );
+    }
+    next = {
+      ...next,
+      lastRollWasDoubles: true,
+      players: {
+        ...next.players,
+        [playerId]: { ...next.players[playerId], doublesRolledCount },
+      },
+    };
+    return moveAndResolve(next, playerId, steps, rng);
   }
 
-  next = { ...next, doublesCount, lastRollWasDoubles: isDoubles };
+  next = { ...next, lastRollWasDoubles: false };
   return moveAndResolve(next, playerId, steps, rng);
 }
 
@@ -1741,6 +1787,9 @@ export function useDenounceCollaborators(
   const target = state.players[targetPlayerId];
   if (!player.heldCardIds.includes('denounceCollaborators')) return state;
   if (!player.inJail || !target || targetPlayerId === playerId) return state;
+  if (!canLeaveJail(state, playerId)) {
+    return logEvent(state, 'Too many roubles to leave jail - Denounce Your Collaborators failed.');
+  }
 
   const next: GameState = {
     ...state,
@@ -1860,6 +1909,9 @@ function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
   const next: GameState = { ...state, activeVote: null };
   if (verdict === 'disappear') {
     return disappearPlayer(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
+  }
+  if (!canLeaveJail(next, activeVote.targetPlayerId)) {
+    return logEvent(next, 'Voted to release, but they have over 1000 roubles - sent straight back to jail.');
   }
   const target = next.players[activeVote.targetPlayerId];
   return logEvent(
@@ -2162,7 +2214,7 @@ export function endTurn(state: GameState): GameState {
         [endingPlayerId]: { ...endingPlayer, extraTurns: endingPlayer.extraTurns - 1 },
       },
     };
-    return { ...next, lastRoll: null, lastRollWasDoubles: false, doublesCount: 0 };
+    return { ...next, lastRoll: null, lastRollWasDoubles: false };
   }
 
   // Endgame's final lap: this player's turn is genuinely over now (not
@@ -2171,7 +2223,7 @@ export function endTurn(state: GameState): GameState {
   // target-choices or, if no Piece needs one, Scores themselves.
   next = removeFromFinalLap(next, endingPlayerId);
   if (next.endgame?.results) {
-    return { ...next, lastRoll: null, lastRollWasDoubles: false, doublesCount: 0 };
+    return { ...next, lastRoll: null, lastRollWasDoubles: false };
   }
 
   next = advanceTurn(next);
@@ -2180,7 +2232,6 @@ export function endTurn(state: GameState): GameState {
     ...next,
     lastRoll: null,
     lastRollWasDoubles: false,
-    doublesCount: 0,
   };
 }
 
@@ -2300,10 +2351,11 @@ export function devSetRoubles(
 ): GameState {
   const player = state.players[playerId];
   if (!player) return state;
-  return {
+  const next: GameState = {
     ...state,
     players: { ...state.players, [playerId]: { ...player, roubles } },
   };
+  return applyOverRoublesJailRule(next, playerId);
 }
 
 export function devSetForcedRoll(

@@ -19,6 +19,7 @@ import {
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
+  devSetRoubles,
   drawFromPile,
   endTurn,
   getAvailablePieceIds,
@@ -82,10 +83,13 @@ describe('rollDice', () => {
   it('pays 200 roubles for landing exactly on STOY', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 38);
+    // Below 1000 so the STOY bonus doesn't also trip the separate
+    // over-1000 jail rule - this test is just about the bonus itself.
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 700 } } };
     state = devSetForcedRoll(state, [1, 1]); // 38 + 2 = 40 -> wraps to 0
     state = rollDice(state);
     expect(state.players.p1.position).toBe(0);
-    expect(state.players.p1.roubles).toBe(1000 + 200);
+    expect(state.players.p1.roubles).toBe(700 + 200);
   });
 
   it('charges a 50 rouble fee for passing STOY without landing on it', () => {
@@ -219,7 +223,7 @@ describe('jail', () => {
     expect(state.players.p1.inJail).toBe(true);
   });
 
-  it('sends a player to jail after three consecutive doubles instead of moving', () => {
+  it('sends a player to jail after three doubles, cumulative not just consecutive', () => {
     let state = createInitialGameState(PLAYERS);
     // Start somewhere that two +4 moves land on plain properties, not a
     // card tile - drawing a random card here would make this test flaky
@@ -237,7 +241,42 @@ describe('jail', () => {
     expect(state.players.p1.inJail).toBe(true);
     expect(state.players.p1.position).toBe(10);
     expect(state.lastRollWasDoubles).toBe(false); // turn ends, doesn't chain into another roll
-    expect(state.doublesCount).toBe(0);
+    expect(state.players.p1.doublesRolledCount).toBe(0);
+  });
+
+  it('sends a player to jail after three doubles that are not consecutive', () => {
+    let state = createInitialGameState(PLAYERS);
+    // Low roubles so an incidental rent/bonus along the way can't
+    // accidentally trip the separate over-1000 jail rule and confuse
+    // this test's own assertions.
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 200 } },
+    };
+
+    state = devSetForcedRoll(state, [1, 1]);
+    state = rollDice(state); // doubles #1 - position 0 -> 2
+    expect(state.players.p1.doublesRolledCount).toBe(1);
+
+    state = devSetForcedRoll(state, [1, 2]);
+    state = rollDice(state); // non-doubles - position 2 -> 5, count untouched
+    expect(state.players.p1.doublesRolledCount).toBe(1);
+    expect(state.players.p1.inJail).toBe(false);
+
+    state = devSetForcedRoll(state, [2, 2]);
+    state = rollDice(state); // doubles #2 - position 5 -> 9
+    expect(state.players.p1.doublesRolledCount).toBe(2);
+
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state); // non-doubles again - position 9 -> 13, still no reset
+    expect(state.players.p1.doublesRolledCount).toBe(2);
+    expect(state.players.p1.inJail).toBe(false);
+
+    state = devSetForcedRoll(state, [3, 3]);
+    state = rollDice(state); // doubles #3 - jails instead of moving, even though none were back-to-back
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.doublesRolledCount).toBe(0);
   });
 
   it('escapes jail by rolling doubles, then moves normally from the jail tile', () => {
@@ -322,6 +361,123 @@ describe('jail', () => {
     expect(state.players.p1.inJail).toBe(false);
     expect(state.players.p1.roubles).toBe(1000); // reset by the placeholder
     expect(state.currentTurnIndex).toBe(1);
+  });
+
+  it('sends a player to jail the moment a gain pushes them over 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    // p1 owns Moscow Metro (tile 6, base rent 6); park p1's own roubles
+    // right at the edge so collecting rent tips them over.
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6], roubles: 995 },
+      },
+    };
+    state = endTurn(state); // p2's turn
+
+    state = devSetForcedRoll(state, [2, 4]); // p2 lands on tile 6, pays 6 rent
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1001);
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it("doesn't jail for a gain that lands exactly on 1000", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6], roubles: 994 },
+      },
+    };
+    state = endTurn(state);
+
+    state = devSetForcedRoll(state, [2, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.inJail).toBe(false);
+  });
+
+  it("the Dev Panel's set-roubles tool also enforces the over-1000 rule", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetRoubles(state, 'p1', 1500);
+
+    expect(state.players.p1.roubles).toBe(1500);
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it('rolling doubles to escape jail fails (stays jailed) while still over 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, position: 10, roubles: 1500 },
+      },
+    };
+    state = devSetForcedRoll(state, [3, 3]); // would normally escape
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.position).toBe(10);
+  });
+
+  it('escapes normally by rolling doubles once back at/under 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, position: 10, roubles: 1000 },
+      },
+    };
+    state = devSetForcedRoll(state, [3, 3]);
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p1.position).toBe(16);
+  });
+
+  it('Denounce Your Collaborators fails while the holder has over 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: {
+          ...state.players.p1,
+          inJail: true,
+          position: 10,
+          roubles: 1500,
+          heldCardIds: ['denounceCollaborators'],
+        },
+      },
+    };
+    state = useDenounceCollaborators(state, 'p1', 'p2');
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p2.inJail).toBe(false);
+    expect(state.players.p1.heldCardIds).toEqual(['denounceCollaborators']); // card not consumed
+  });
+
+  it('a Show Trial release sends the target straight back to jail if they have over 1000 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, heldCardIds: ['showTrial'] },
+        p2: { ...state.players.p2, inJail: true, position: 10, roubles: 1500 },
+      },
+    };
+    state = callShowTrial(state, 'p1', 'p2');
+    state = castShowTrialVote(state, 'p1', 'release');
+    state = castShowTrialVote(state, 'p2', 'release');
+
+    expect(state.players.p2.inJail).toBe(true);
   });
 });
 
@@ -770,14 +926,16 @@ describe('Communist Test / No Chance cards', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
-      players: { ...state.players, p1: { ...state.players.p1, movingBackward: true } },
+      // Below 1000 so the Kremlin bonus below doesn't also trip the
+      // separate over-1000 jail rule - this test is just about the wrap.
+      players: { ...state.players, p1: { ...state.players.p1, movingBackward: true, roubles: 700 } },
     };
     state = withPosition(state, 'p1', 2);
     state = devSetForcedRoll(state, [2, 3]); // 2 - 5 -> wraps backward past STOY to 37
     state = rollDice(state);
 
     expect(state.players.p1.position).toBe(37);
-    expect(state.players.p1.roubles).toBe(1000 - 50 + 200); // STOY pass fee, then Kremlin's first-visit bonus
+    expect(state.players.p1.roubles).toBe(700 - 50 + 200); // STOY pass fee, then Kremlin's first-visit bonus
   });
 
   it('"Blacklist" blocks buying and rent collection until passing STOY again', () => {
@@ -826,6 +984,9 @@ describe('Communist Test / No Chance cards', () => {
   it('"Nomenklatura" force-advances to The Kremlin and waives the STOY pass fee', () => {
     let state = createInitialGameState(PLAYERS);
     state = withPosition(state, 'p1', 30);
+    // Below 1000 so the Kremlin bonus below doesn't also trip the
+    // separate over-1000 jail rule - this test is just about the advance.
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 700 } } };
     state = devSetForcedCard(state, 'nomenklatura');
     state = devSetForcedRoll(state, [3, 5]); // 30 + 8 -> tile 38, Communist Test
     state = rollDice(state);
@@ -834,7 +995,7 @@ describe('Communist Test / No Chance cards', () => {
     expect(state.players.p1.position).toBe(37); // The Kremlin
     // No STOY pass fee despite wrapping through it, plus the Kremlin's
     // own first-visit bonus for landing there.
-    expect(state.players.p1.roubles).toBe(1000 + 200);
+    expect(state.players.p1.roubles).toBe(700 + 200);
     expect(state.players.p1.kremlinVisits).toBe(1);
   });
 });
@@ -960,7 +1121,7 @@ describe('newly automated cards', () => {
   });
 
   describe('"Bestseller!"', () => {
-    it('rolling a 6 keeps the 500 roubles with no further consequence', () => {
+    it('rolling a 6 keeps the 500 roubles, but that pushes them over 1000 - jailed by the house rule, not the card', () => {
       let state = createInitialGameState(PLAYERS);
       state = withPosition(state, 'p1', 0);
       state = devSetForcedCard(state, 'bestseller');
@@ -969,7 +1130,7 @@ describe('newly automated cards', () => {
       state = drawFromPile(state, () => 0.99); // -> 6
 
       expect(state.players.p1.roubles).toBe(1500);
-      expect(state.players.p1.inJail).toBe(false);
+      expect(state.players.p1.inJail).toBe(true);
     });
 
     it('rolling a 1 Disappears the player after collecting the 500', () => {
@@ -994,7 +1155,7 @@ describe('newly automated cards', () => {
 
       expect(state.players.p1.roubles).toBe(1500); // kept the 500
       expect(state.players.p1.ownedTileIds).toEqual([]);
-      expect(state.players.p1.inJail).toBe(false);
+      expect(state.players.p1.inJail).toBe(true); // over 1000 roubles - jailed by the house rule
     });
 
     it('jails instead if there was no property to surrender', () => {
@@ -2122,7 +2283,12 @@ describe('mortgaging', () => {
 
   it('a mortgaged property charges no rent', () => {
     let state = createInitialGameState(PLAYERS);
-    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = {
+      ...state,
+      // Below 1000 so the mortgage payout below doesn't also trip the
+      // separate over-1000 jail rule - this test is just about the rent.
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6], roubles: 500 } },
+    };
     state = mortgageProperty(state, 'p1', 6);
     state = endTurn(state); // p2's turn
     state = withPosition(state, 'p2', 0);
@@ -2131,7 +2297,7 @@ describe('mortgaging', () => {
     state = rollDice(state);
 
     expect(state.players.p2.roubles).toBe(1000); // no rent paid
-    expect(state.players.p1.roubles).toBe(1000 + 50); // just the mortgage payout, no rent
+    expect(state.players.p1.roubles).toBe(500 + 50); // just the mortgage payout, no rent
   });
 
   it('pays off a mortgage for the mortgage value plus 10% interest', () => {

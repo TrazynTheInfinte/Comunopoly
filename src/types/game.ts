@@ -144,6 +144,8 @@ export interface GamePlayerState {
   isSpectating: boolean;
   /** Times this player has used Rubber duck's power to actually send someone to jail (not other jailing mechanics) - feeds Rubber duck's Win Condition. */
   sentToJailCount: number;
+  /** Doubles this player has rolled, cumulative across turns (not necessarily consecutive) - 3 sends them to jail instead of moving. Only resets when that happens, or when this player Disappears; every other route to jail (the Go To Jail tile, cards, NKVD, etc.) leaves it untouched. Meaningless while inJail - see resolveJailRoll, which suspends this rule entirely. */
+  doublesRolledCount: number;
 }
 
 /**
@@ -189,8 +191,6 @@ export interface GameState {
   players: Record<string, GamePlayerState>;
   lastRoll: [number, number] | null;
   lastRollWasDoubles: boolean;
-  /** Consecutive doubles rolled by the current player this turn (outside jail) - 3 in a row sends them to jail instead of moving. Resets whenever the turn actually passes to someone else. */
-  doublesCount: number;
   pendingDecision: PendingDecision | null;
   /** Dev-panel override: if set, the next rollDice() call uses this instead of a random roll, then clears it. */
   forcedRoll: [number, number] | null;

@@ -20,6 +20,12 @@ The act of the State confiscating assets, either from a Disappearing player or v
 **Bribe**:
 The 100-Rouble payment a jailed player must make at the end of each of their turns to avoid Disappearing. Distinct from rolling doubles, which is how a player leaves jail outright.
 
+**Hoarding Limit**:
+House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead.
+
+**Repeat Doubles**:
+House rule: a player who rolls doubles three times total is sent to jail instead of moving on that third roll. Unlike classic Monopoly, these three doubles don't need to be consecutive or within the same turn — the count only resets when it actually triggers this jailing, or when the player Disappears. Every other route to jail (the Go To Jail tile, cards, NKVD, The Kremlin, etc.) leaves the count untouched.
+
 ### Pieces, players & the endgame
 
 **Piece**:
