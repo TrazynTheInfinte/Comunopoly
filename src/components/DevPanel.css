@@ -51,3 +51,15 @@
 .dev-panel-row button {
   flex-shrink: 0;
 }
+
+/* Visually flags the one truly irreversible-for-everyone action in
+   here (ending the whole match) as distinct from the rest, which just
+   nudge state around. */
+.dev-panel-section-danger {
+  border: 2px solid var(--color-red);
+  padding: 0.5em;
+}
+
+.dev-panel-section-danger button {
+  background: var(--color-black);
+}

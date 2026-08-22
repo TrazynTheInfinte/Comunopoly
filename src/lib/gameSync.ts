@@ -1,4 +1,4 @@
-import { doc, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import type { CardDeck, GameState, PieceId } from '../types/game';
 import {
@@ -55,6 +55,21 @@ export async function startGame(
   playerAssignments: { playerId: string; pieceId: PieceId }[],
 ) {
   await writeGameState(roomCode, createInitialGameState(playerAssignments));
+}
+
+/**
+ * The nuclear option for a Comrade Stalin: wipes the room's `game`
+ * field entirely (Room.game is optional - "absent while the room is
+ * still in its lobby" - so this is the same as the room never having
+ * started one), dropping everyone straight back to the Lobby for every
+ * connected client at once via their live subscription. For a game
+ * that's gotten stuck in a way even kicking a player and force-skipping
+ * a turn can't recover from. Players keep their existing seats/Piece
+ * assignments in room.players, so the host can just hit Start Game
+ * again immediately rather than everyone re-joining from scratch.
+ */
+export async function endGameEntirely(roomCode: string) {
+  await updateDoc(doc(db, 'rooms', roomCode), { game: deleteField() });
 }
 
 export async function rollDiceAndSync(roomCode: string, game: GameState) {

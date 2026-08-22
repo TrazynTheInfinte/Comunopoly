@@ -12,6 +12,7 @@ import {
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
+  endGameEntirely,
 } from '../lib/gameSync';
 import { isPlayerAway } from '../lib/presence';
 import { debugPlayGameTrack, FINAL_TRACKS, STANDARD_TRACKS } from '../lib/sound';
@@ -23,6 +24,13 @@ interface DevPanelProps {
   room: Room;
   roomCode: string;
   game: GameState;
+}
+
+function handleEndGameEntirely(roomCode: string) {
+  if (!window.confirm('End this game for everyone and return to the Lobby? This cannot be undone.')) {
+    return;
+  }
+  void endGameEntirely(roomCode);
 }
 
 // Only reachable by naming yourself "Comrade Stalin" while hosting - see
@@ -272,6 +280,19 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           {game.endgame
             ? 'Already triggered - everyone still gets their one final turn before Scores are computed.'
             : "Retires every Piece nobody's currently holding, as if the Pool just ran dry. Everyone active still gets one final turn as normal."}
+        </p>
+      </div>
+
+      <div className="dev-panel-section dev-panel-section-danger">
+        <p>Force End Game Entirely</p>
+        <div className="dev-panel-row">
+          <button onClick={() => handleEndGameEntirely(roomCode)}>Back to the Lobby, Now</button>
+        </div>
+        <p className="hint">
+          The nuclear option, for a game stuck in a way even kicking a player can't fix. Wipes this
+          match entirely and drops everyone straight back to the Lobby - the room, its code, and
+          everyone's seat/Piece assignment all survive, so the host can just hit Start Game again
+          right away. Cannot be undone.
         </p>
       </div>
     </section>
