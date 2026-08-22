@@ -19,6 +19,7 @@ import {
   devForceEndgame,
   devForceSkipTurn,
   devJumpToTile,
+  devKickPlayer,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
@@ -3229,5 +3230,93 @@ describe('Dev Panel: unstick the game (a disconnected player)', () => {
   it('devForceAutoPickPiece is a no-op for a player who is not actually stuck choosing one', () => {
     const state = createInitialGameState(PLAYERS);
     expect(devForceAutoPickPiece(state, 'p1')).toBe(state);
+  });
+});
+
+describe('Dev Panel: kick a player', () => {
+  it('seizes everything, retires their Piece, and permanently spectates them', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, roubles: 500, ownedTileIds: [6] } },
+    };
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.players.p1.roubles).toBe(1000); // reset by the seizure
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.retiredPieceIds).toContain('boot');
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.pendingPieceChoices).not.toContain('p1'); // never queued for a pick - no one left to make it
+  });
+
+  it("forces the turn to end if it was the kicked player's turn", () => {
+    let state = createInitialGameState(PLAYERS);
+    expect(state.turnOrder[state.currentTurnIndex]).toBe('p1');
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.turnOrder[state.currentTurnIndex]).toBe('p2');
+  });
+
+  it("doesn't touch the turn order when kicking someone whose turn it isn't", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = endTurn(state); // p1's (empty) turn ends -> p2's turn
+    expect(state.turnOrder[state.currentTurnIndex]).toBe('p2');
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.turnOrder[state.currentTurnIndex]).toBe('p2'); // unchanged
+    expect(state.players.p1.isSpectating).toBe(true);
+  });
+
+  it('is a no-op for an unknown player or one already spectating', () => {
+    let state = createInitialGameState(PLAYERS);
+    expect(devKickPlayer(state, 'not-a-real-player')).toBe(state);
+
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, isSpectating: true } } };
+    expect(devKickPlayer(state, 'p1')).toBe(state);
+  });
+
+  it('pulls a kicked player off the final lap, computing Scores immediately if they were the last one owed a turn', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = triggerEndgame(state, 'p1');
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.endgame?.finalLapRemaining).toEqual([]);
+    expect(state.endgame?.results).not.toBeNull();
+  });
+
+  it('pulls a kicked player off pendingTargetChoices (their own transfer just does not happen), computing Scores if they were last', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'iron' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+    ]);
+    state = {
+      ...state,
+      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null },
+    };
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.endgame?.pendingTargetChoices).toEqual([]);
+    expect(state.endgame?.results).not.toBeNull();
+    // Kicked (permanently spectating) players don't participate in
+    // scoring at all, source or target - not even a 0 entry - same as
+    // any other spectator (see computeEndgameScores' doc comment).
+    expect(state.endgame?.results?.p1).toBeUndefined();
+    expect(state.endgame?.results?.p2).toBeDefined();
+  });
+
+  it('kicking a player stuck choosing a replacement Piece spectates them instead of leaving them queued', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devForceDisappear(state, 'p1');
+    expect(state.pendingPieceChoices).toContain('p1');
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.pendingPieceChoices).not.toContain('p1');
+    expect(state.players.p1.isSpectating).toBe(true);
   });
 });

@@ -21,6 +21,7 @@ import {
   devForceEndgame,
   devForceSkipTurn,
   devJumpToTile,
+  devKickPlayer,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
@@ -269,6 +270,10 @@ export async function devDrawCardAndSync(
 
 export async function devForceSkipTurnAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, devForceSkipTurn(game));
+}
+
+export async function devKickPlayerAndSync(roomCode: string, game: GameState, playerId: string) {
+  await writeGameState(roomCode, devKickPlayer(game, playerId));
 }
 
 export async function devForceAutoPickPieceAndSync(

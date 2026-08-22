@@ -6,7 +6,7 @@ import {
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
 import { STARTING_PIECES } from '../data/pieces';
-import type { CardDeck, ColorGroup, EndgameState, GameState, GamePlayerState, PieceId } from '../types/game';
+import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId } from '../types/game';
 
 const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
 
@@ -332,13 +332,21 @@ export function chooseEndgameTarget(
     return state;
   }
 
-  const nextEndgame: EndgameState = {
-    ...state.endgame,
-    pendingTargetChoices: state.endgame.pendingTargetChoices.filter((id) => id !== playerId),
-    targetChoices: { ...state.endgame.targetChoices, [playerId]: targetPlayerId },
+  const next: GameState = {
+    ...state,
+    endgame: { ...state.endgame, targetChoices: { ...state.endgame.targetChoices, [playerId]: targetPlayerId } },
   };
-  const next: GameState = { ...state, endgame: nextEndgame };
-  return nextEndgame.pendingTargetChoices.length === 0 ? computeEndgameScores(next) : next;
+  return removeFromPendingTargetChoices(next, playerId);
+}
+
+/** Pops a player off the Endgame's pending-target-choice list, cascading into computeEndgameScores once nobody's left choosing - shared by a real choice completing (chooseEndgameTarget, which records the choice first) and a kicked player being pulled off the list with no choice recorded at all (their own transfer just doesn't happen - see computeEndgameScores' fallbacks for a Piece with no entry in targetChoices). */
+function removeFromPendingTargetChoices(state: GameState, playerId: string): GameState {
+  if (!state.endgame || state.endgame.results !== null) return state;
+  if (!state.endgame.pendingTargetChoices.includes(playerId)) return state;
+
+  const remaining = state.endgame.pendingTargetChoices.filter((id) => id !== playerId);
+  const next: GameState = { ...state, endgame: { ...state.endgame, pendingTargetChoices: remaining } };
+  return remaining.length === 0 ? computeEndgameScores(next) : next;
 }
 
 function rollTwoDice(rng: () => number): [number, number] {
@@ -2454,6 +2462,46 @@ export function devForceEndgame(state: GameState): GameState {
 export function devForceSkipTurn(state: GameState): GameState {
   const cleared: GameState = { ...state, pendingDecision: null, lastRollWasDoubles: false };
   return logEvent(endTurn(cleared), "Comrade Stalin forced the turn to end.");
+}
+
+/**
+ * Permanently removes a player from the game - for a Comrade Stalin to
+ * use when someone's genuinely gone (closed their tab, dead wifi) and
+ * left the game (most importantly the Endgame, where nothing else ever
+ * pulls a stuck player off finalLapRemaining/pendingTargetChoices)
+ * stuck waiting on them forever. Runs the same asset-seizure and
+ * dangling-reference cleanup as a real Disappear (via disappearPlayer),
+ * but always ends in spectating - never queued for a fresh Piece pick,
+ * since there's no one left to make that choice - and, unlike a real
+ * Disappear, also has to actively pull the current turn away from them
+ * if it was theirs, since nothing else would ever do that for a player
+ * who isn't going to act again.
+ */
+export function devKickPlayer(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  if (!player || player.isSpectating) return state;
+
+  let next = disappearPlayer(state, playerId, 'kicked by Comrade Stalin');
+  next = {
+    ...next,
+    players: {
+      ...next.players,
+      [playerId]: { ...next.players[playerId], isSpectating: true, extraTurns: 0 },
+    },
+    // disappearPlayer only spectates automatically once the Piece Pool
+    // is exhausted; a kick is permanent regardless, so force it (and
+    // undo the pendingPieceChoices queueing disappearPlayer did if the
+    // Pool wasn't actually exhausted - there's no one left to pick).
+    pendingPieceChoices: next.pendingPieceChoices.filter((id) => id !== playerId),
+  };
+  next = removeFromFinalLap(next, playerId);
+  next = removeFromPendingTargetChoices(next, playerId);
+
+  if (currentPlayerId(next) === playerId) {
+    next = devForceSkipTurn(next);
+  }
+
+  return next;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   devForceEndgameAndSync,
   devForceSkipTurnAndSync,
   devJumpToTileAndSync,
+  devKickPlayerAndSync,
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
@@ -233,6 +234,31 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Kick a player (permanent - only for someone who's actually gone)</p>
+        {game.turnOrder.map((id) => (
+          <div key={id} className="dev-panel-row">
+            <label>
+              {room.players[id]?.name}
+              {isPlayerAway(room.players[id]) ? ' (away)' : ''}
+              {game.players[id].isSpectating ? ' (already spectating)' : ''}
+            </label>
+            <button
+              onClick={() => devKickPlayerAndSync(roomCode, game, id)}
+              disabled={game.players[id].isSpectating}
+            >
+              Kick
+            </button>
+          </div>
+        ))}
+        <p className="hint">
+          Seizes everything and retires their Piece, same as a real Disappear - but always ends in
+          spectating (never a fresh Piece pick, there's no one left to make that choice) and, if it
+          was their turn, forces it to end. Use this for a player who's genuinely gone, not just
+          taking their time - it can't be undone.
+        </p>
       </div>
 
       <div className="dev-panel-section">
