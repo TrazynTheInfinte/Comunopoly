@@ -23,6 +23,18 @@
   --color-grey: #4a4a4a;
   --color-grey-light: #d9d5c7;
 
+  /* Board color-group swatches - propaganda-poster tones (mustard gold,
+     olive drab, rust, muted rose, steel blue, deep violet) rather than
+     Monopoly's bright pastels, to stay in the same family as the palette
+     above. */
+  --group-purple: #5b3a73;
+  --group-lightBlue: #3f7ca8;
+  --group-pink: #b5677f;
+  --group-orange: #c96a24;
+  --group-red: #a3231f;
+  --group-yellow: #c99a1e;
+  --group-green: #4c6b3a;
+
   --font-display: 'JetBrains Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }

@@ -13,6 +13,7 @@ import {
   skipPurchaseAndSync,
 } from '../lib/gameSync';
 import type { Room } from '../types/room';
+import Board from './Board';
 import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
 import CatRedirectPrompt from './CatRedirectPrompt';
@@ -38,9 +39,10 @@ function pieceName(pieceId: string): string {
   return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
 }
 
-// This is deliberately plain - a functional board-state readout, not the
-// 2.5D board art. Getting the rules right comes first; the visual board
-// is a separate, later pass over just this component.
+// The actual board visual lives in <Board> below; everything in this
+// file past that is still the plain functional readout (status, actions,
+// decision prompts, event log) - that part isn't a placeholder, it's
+// just not meant to be pretty, since decisions need to stay legible.
 function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   const [isRolling, setIsRolling] = useState(false);
   const [accusedId, setAccusedId] = useState('');
@@ -89,6 +91,8 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   return (
     <main className="game-board">
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
+
+      <Board room={room} game={game} />
 
       <section className="game-status">
         <p className="turn-indicator">
