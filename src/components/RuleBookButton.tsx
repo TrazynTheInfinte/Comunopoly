@@ -15,25 +15,25 @@ const SECTIONS: RuleBookSection[] = [
   {
     title: 'I. The Goal',
     body: [
-      "Every player starts with 1000 Roubles and a secret Piece - each with its own hidden Special Power and Win Condition, revealed once you've actually picked it. Buy properties, collect Rent, and build up Collections. Once the Piece Pool runs dry (every Piece is either in play or permanently retired), the Endgame begins.",
+      "Every comrade begins equal: 1000 Roubles and a secret Piece, its Special Power and Win Condition sealed until you've actually claimed it. Acquire property in the name of the People, collect what's owed to you, and complete your Collections. The instant the Piece Pool runs dry - every Piece either claimed or struck from the record for good - the Endgame begins.",
     ],
   },
   {
     title: 'II. Taking Your Turn',
     body: [
-      "Roll two dice and move that many spaces clockwise. Rolling doubles lets you roll again immediately - but roll three doubles total (they don't have to be in a row) and you're sent straight to jail instead of moving.",
+      "Roll two dice and advance that many spaces clockwise. Doubles earn you the State's favor - roll again immediately - but favor has its limits: three doubles total, in a row or spread across the whole match, and the State decides you've been moving too freely. Straight to jail, no further movement.",
     ],
   },
   {
     title: 'III. Properties & Rent',
     body: [
-      "Land on an unowned property or railroad and you can buy it. Land on one someone else owns and you owe them Rent - more if they own the whole Collection, more still if they've built houses or a hotel on it.",
+      "Land on unclaimed property or a railroad and it's yours for the taking, provided you can afford it. Land on ground someone else has already claimed and you owe them Rent for the privilege - more if they hold the entire Collection, more still if they've built housing or a hotel on it.",
     ],
   },
   {
     title: 'IV. Jail',
     body: [
-      "You can end up in jail from the Go To Jail tile, three cumulative doubles, several cards, or being unable to afford a debt (Destitute). Get out by paying a 100-Rouble Bribe at the end of each turn you're still in, or by rolling doubles on your turn.",
+      "The Go To Jail tile, three doubles, an unpaid debt (Destitute), or any number of cards can land you behind bars. Buy your way out with a 100-Rouble Bribe at the end of every turn you're still inside, or roll doubles on your own turn and walk free.",
     ],
   },
   {
@@ -45,25 +45,25 @@ const SECTIONS: RuleBookSection[] = [
   {
     title: 'VI. Cards',
     body: [
-      'Land on a Communist Test or No Chance space and click the pile to draw - anything from a windfall to a trip to jail.',
+      "Land on a Communist Test or No Chance space and click the pile - the State has prepared something for you. Could be a windfall, could be a summons. Draw it and find out.",
     ],
   },
   {
     title: 'VII. The West',
     body: [
-      "Land on Free Parking (or on your own property) and you can Smuggle Roubles into your West stash, safe from an opponent - unless you Disappear, or someone else lands on Free Parking before you make it back around the board.",
+      "Land on Free Parking, or on a property you already hold, and you may Smuggle Roubles out to the West - beyond the State's reach, for now. It isn't safe until you've made a full lap of the board since; and it's never safe if your Piece Disappears, or if another comrade reaches Free Parking before you complete that lap.",
     ],
   },
   {
     title: 'VIII. Disappearing',
     body: [
-      "Can't pay a debt, fail a card, whatever the cause - and your Piece Disappears: everything's Seized by the State, and you pick a fresh Piece from the Piece Pool and start again with 1000 Roubles. If the Pool's already empty, you're out for good, spectating the rest of the match.",
+      "Fail to pay what you owe, draw the wrong card, run afoul of the wrong tile - and your Piece Disappears. Everything you held is Seized by the State. If the Piece Pool still has something to offer, you're issued a replacement Piece and 1000 fresh Roubles to start again. If the Pool is empty, there's nothing left to issue - you're out for good, watching the rest of the match unfold.",
     ],
   },
   {
     title: 'IX. The Endgame',
     body: [
-      "Once the Piece Pool has no Pieces left to hand out, everyone still playing gets exactly one final turn. Then each Piece's own Win Condition is calculated - some reward Roubles, some steal from a neighbor, some flip everything on its head. Whoever ends up with the highest Score wins.",
+      "Once the Piece Pool has nothing left to give out, every comrade still standing gets one final turn. Then the books are settled: each Piece's own Win Condition is calculated - some reward Roubles, some steal from a neighbor, some flip everything on its head, rules only revealed now. Whoever the State judges to have served best - the highest Score - wins.",
     ],
   },
 ];
