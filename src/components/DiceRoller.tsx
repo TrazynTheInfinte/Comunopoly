@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { playDiceLand, playDiceTick } from '../lib/sound';
 import type { GameState } from '../types/game';
 import './DiceRoller.css';
 
@@ -120,6 +121,7 @@ function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
 
     setIsRolling(true);
     intervalRef.current = setInterval(() => {
+      playDiceTick();
       setDisplayValues([
         Math.floor(Math.random() * 6) + 1,
         diceCount === 2 ? Math.floor(Math.random() * 6) + 1 : 0,
@@ -130,6 +132,7 @@ function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
       clearInterval(intervalRef.current);
       setIsRolling(false);
       setDisplayValues(latestRollRef.current);
+      playDiceLand();
     }, ROLL_ANIMATION_MS);
     // rollTrigger (a local click) and rollSignature (the real result
     // landing, or clearing at end of turn) are two different signals

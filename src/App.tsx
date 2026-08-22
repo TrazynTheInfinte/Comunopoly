@@ -1,12 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import './App.css';
 import RoomView from './components/RoomView';
+import SoundToggle from './components/SoundToggle';
 import { createRoom, joinRoom } from './lib/rooms';
 import {
   getOrCreatePlayerId,
   getStoredName,
   storeName,
 } from './lib/playerIdentity';
+import { wireAutoInitOnFirstInteraction } from './lib/sound';
 import { useVersionWatcher } from './lib/versionWatcher';
 import type { RoomMode } from './types/room';
 
@@ -19,6 +21,14 @@ function App() {
   // switches between the landing screen and RoomView) - so a stale tab
   // gets caught and reloaded even mid-game, not just on the menu.
   useVersionWatcher();
+
+  // Browsers refuse to play audio until the page has had a real user
+  // gesture - this covers whoever never touches the dedicated sound
+  // toggle, since their very first click (Join/Create Room, anything)
+  // still counts.
+  useEffect(() => {
+    wireAutoInitOnFirstInteraction();
+  }, []);
 
   const [view, setView] = useState<View>('landing');
   const [mode, setMode] = useState<Mode>('join');
@@ -80,11 +90,17 @@ function App() {
   }
 
   if (view === 'lobby') {
-    return <RoomView roomCode={activeRoomCode} playerId={playerId} />;
+    return (
+      <>
+        <SoundToggle />
+        <RoomView roomCode={activeRoomCode} playerId={playerId} />
+      </>
+    );
   }
 
   return (
     <main className="app">
+      <SoundToggle />
       <p className="build-badge">build {__BUILD_SHA__}</p>
       <h1 className="title">COMUNOPOLY</h1>
       <p className="subtitle">The People's Monopoly</p>

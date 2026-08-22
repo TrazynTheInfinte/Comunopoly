@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
 import { findCard } from '../data/cards';
@@ -12,6 +12,7 @@ import {
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
+import { playCardDraw } from '../lib/sound';
 import type { Room } from '../types/room';
 import Board from './Board';
 import CardChoicePrompt from './CardChoicePrompt';
@@ -28,6 +29,7 @@ import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
 import './GameBoard.css';
 
@@ -54,6 +56,11 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
   // other landing effect) doesn't seem to happen before their piece has
   // visibly finished moving - see useStagedGame for the full story.
   const game = useStagedGame(room.game);
+  // Hooks can't be called conditionally, so this (and useStagedGame
+  // above) has to run before the `if (!game) return null` guard below -
+  // an empty array is a harmless placeholder for the one render where
+  // game isn't available yet.
+  useSoundEvents(game?.log ?? []);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
@@ -204,6 +211,7 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
           {pendingCard && game.pendingDecision?.type === 'cardDrawn' && (
             <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
+              <CardRevealSound />
               <p className="card-title">{pendingCard.title}</p>
               <p>{pendingCard.text}</p>
               <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
@@ -302,6 +310,17 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       <Hand room={room} roomCode={roomCode} playerId={playerId} game={game} />
     </main>
   );
+}
+
+// A silent helper that just plays the card-draw sound once, the moment
+// it mounts - since the card-reveal banner it lives inside is keyed by
+// cardId (see above), React mounts a fresh one of these every time a
+// new card is actually drawn, which is exactly the trigger we want.
+function CardRevealSound() {
+  useEffect(() => {
+    playCardDraw();
+  }, []);
+  return null;
 }
 
 export default GameBoard;

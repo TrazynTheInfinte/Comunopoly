@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { STARTING_PIECES } from '../data/pieces';
+import { playEndgameFanfare } from '../lib/sound';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
 import './EndgameResultsScreen.css';
@@ -15,6 +17,13 @@ function pieceName(pieceId: string): string {
 // Shown once every Score is in (game.endgame.results is set) - replaces
 // the board entirely, since the game is genuinely over at this point.
 function EndgameResultsScreen({ room, game }: EndgameResultsScreenProps) {
+  // GameBoard only ever mounts this component once results already
+  // exist (it's the condition that renders it in the first place), so
+  // this only ever needs to fire once, on mount.
+  useEffect(() => {
+    playEndgameFanfare();
+  }, []);
+
   const results = game.endgame?.results;
   if (!results) return null;
 

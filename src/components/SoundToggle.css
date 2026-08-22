@@ -1,0 +1,8 @@
+.sound-toggle {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 10;
+  font-size: 0.7rem;
+  padding: 0.5em 0.9em;
+}
