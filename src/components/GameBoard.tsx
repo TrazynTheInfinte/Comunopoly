@@ -95,10 +95,6 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
       </p>
 
       <div className="board-layout">
-        <div className="board-column">
-          <Board room={room} game={game} />
-        </div>
-
         <aside className="side-panel">
           {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
@@ -282,6 +278,10 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
           {isDevPanelUnlocked && <DevPanel room={room} roomCode={roomCode} game={game} />}
         </aside>
+
+        <div className="board-column">
+          <Board room={room} game={game} />
+        </div>
       </div>
 
       <Hand room={room} roomCode={roomCode} playerId={playerId} game={game} />
