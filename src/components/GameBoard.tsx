@@ -18,6 +18,7 @@ import CardChoicePrompt from './CardChoicePrompt';
 import CardTargetPrompt from './CardTargetPrompt';
 import CatRedirectPrompt from './CatRedirectPrompt';
 import DevPanel from './DevPanel';
+import DiceRoller from './DiceRoller';
 import EndgameResultsScreen from './EndgameResultsScreen';
 import EndgameTargetPrompt from './EndgameTargetPrompt';
 import Hand from './Hand';
@@ -286,6 +287,13 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
 
         <div className="board-column">
           <Board room={room} roomCode={roomCode} playerId={playerId} game={game} />
+        </div>
+
+        <div className="dice-column">
+          {/* Live, not staged - the dice should start tumbling the
+              instant a roll happens, not wait for the token's walk to
+              finish revealing everything else. */}
+          <DiceRoller game={room.game ?? game} />
         </div>
       </div>
 
