@@ -1,6 +1,14 @@
 .hand {
   position: sticky;
   bottom: 0;
+  /* Higher than anything in the board (tile occupants and the jail/
+     Disappear poster stamp are the highest there, at z-index 3 and 5) -
+     without this, the sticky-positioned Hand strip only wins the
+     stacking order by DOM position, and a sufficiently tall board (on
+     a narrow mobile screen, the board is often taller than the
+     viewport) scrolls its own z-indexed content - the "COMMUNOPOLY"
+     banner, piece tokens - right over the top of it instead of under. */
+  z-index: 10;
   display: flex;
   gap: 0.5rem;
   padding: 0.75rem;
