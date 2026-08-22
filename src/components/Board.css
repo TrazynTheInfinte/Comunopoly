@@ -256,12 +256,12 @@
 
 .tile-occupants {
   position: absolute;
-  top: 1px;
-  left: 1px;
+  inset: 0;
   display: flex;
+  align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 1px;
-  max-width: 90%;
+  gap: 2px;
   z-index: 3;
 }
 
@@ -269,10 +269,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--color-black);
+  border: 2px solid var(--color-black);
   color: var(--color-paper);
   /* Fakes a lit dome (light top-left, dark bottom-right) plus a drop
      shadow underneath, so the token reads as a small raised piece
@@ -282,14 +282,14 @@
     radial-gradient(circle at 68% 78%, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0) 60%);
   background-blend-mode: overlay;
   box-shadow:
-    0 2px 0 rgba(17, 17, 17, 0.55),
-    0 3px 3px rgba(17, 17, 17, 0.4);
+    0 3px 0 rgba(17, 17, 17, 0.55),
+    0 5px 5px rgba(17, 17, 17, 0.4);
   animation: tile-token-hop 0.16s ease-out;
 }
 
 .tile-token-icon {
-  width: 12px;
-  height: 12px;
+  width: 24px;
+  height: 24px;
   filter: drop-shadow(0 1px 0.5px rgba(17, 17, 17, 0.5));
 }
 
