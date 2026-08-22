@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { playCash, playDisappear, playExplosion, playJail, playSeize } from '../lib/sound';
+import { playCash, playDisappear, playJail, playSeize } from '../lib/sound';
 
 // Kulak's/T-Rex's auto-seize, Siege of Stalingrad, and The Volga all
 // force a property to change hands with no roubles involved, so none
@@ -12,11 +12,13 @@ const SEIZE_PATTERN =
 /**
  * Watches the shared event log for newly-appended entries and plays a
  * matching sound - covers money changing hands, forced seizures (no
- * money involved), Chernobyl exploding, jail, and Disappearing, for
- * every viewer (not just whoever caused it), since the log is shared
- * game state. Dice and card sounds are handled separately (DiceRoller,
- * the card-reveal banner) since those already have their own more
- * precise animation-synced triggers.
+ * money involved), jail, and Disappearing, for every viewer (not just
+ * whoever caused it), since the log is shared game state. Dice and
+ * card sounds are handled separately (DiceRoller, the card-reveal
+ * banner) since those already have their own more precise animation-
+ * synced triggers - and so is a Chernobyl explosion (useDestructionBursts),
+ * since that one needs to play once per destroyed tile, staggered, not
+ * once per log line.
  *
  * Diffs by comparing log CONTENT (finding where the previous log's last
  * entry still appears), not array reference - Firestore reconstructs
@@ -42,9 +44,7 @@ export function useSoundEvents(log: string[]): void {
     const newEntries = matchIndex === -1 ? [] : log.slice(matchIndex + 1);
 
     for (const entry of newEntries) {
-      if (/Chernobyl Power exploded/i.test(entry)) {
-        playExplosion();
-      } else if (/Disappeared/i.test(entry)) {
+      if (/Disappeared/i.test(entry)) {
         playDisappear();
       } else if (/to jail/i.test(entry)) {
         playJail();

@@ -217,10 +217,20 @@ export function playSeize(): void {
   noiseBurst(0.08, 0.12);
 }
 
-/** Chernobyl Power exploding - a low sweeping thud plus a noise burst, distinct from playSeize (a quick heist-like sting) since this is meant to read as a genuine one-time disaster, not just an ordinary property changing hands. */
+/**
+ * One "distant explosion" - Chernobyl destroying a property. Called
+ * once per destroyed tile, staggered a beat apart (see
+ * useDestructionBursts), so several of these in a row should read as
+ * a rolling series of far-off booms, not one sharp bang up close: a
+ * dull sine sweep rather than a harsh sawtooth, low gain, and a slower
+ * decay than playSeize's quick heist-like sting. Randomizes its own
+ * pitch/gain a little each call so a run of them doesn't sound like
+ * the exact same clip playing back to back.
+ */
 export function playExplosion(): void {
-  sweep(300, 40, 0.5, 'sawtooth', 0.32);
-  noiseBurst(0.3, 0.28);
+  const variance = 0.85 + Math.random() * 0.3; // 0.85x-1.15x
+  sweep(220 * variance, 30 * variance, 0.75, 'sine', 0.16 * variance);
+  noiseBurst(0.45, 0.1 * variance);
 }
 
 /** Plays the instant it becomes a player's own turn - a cue to notice even if they're not looking at the board (alt-tabbed, etc). */
