@@ -17,6 +17,11 @@ dist-ssr
 # versions in public/audio/ actually ship; keep the originals local.
 /soundtracks import/
 
+# Reference assets/screenshots dropped at the repo root for me to pick
+# up - the actual assets live in public/ once wired in; these stay local.
+/communist_banner.jpg
+/example banner pos.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
