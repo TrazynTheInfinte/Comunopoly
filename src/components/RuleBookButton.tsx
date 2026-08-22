@@ -39,7 +39,7 @@ const SECTIONS: RuleBookSection[] = [
   {
     title: 'V. House Rules',
     body: [
-      "This edition adds a Hoarding Limit: end up with over 1000 Roubles and you're sent straight to jail - and you can't leave jail by any means while you're still over it. The mirror image is Destitute: hit exactly 0 Roubles and the same thing happens.",
+      "This edition adds a Hoarding Limit: no honest worker comes by over 1000 Roubles honestly. Cross that line and the State suspects you've been hoarding illegally - you're hauled in for questioning, jailed on suspicion, and you won't be released by any means while you're still over the limit. The mirror image is Destitute: turn up with exactly 0 Roubles and you look just as suspicious - questioned and jailed all the same.",
     ],
   },
   {
