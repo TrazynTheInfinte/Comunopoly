@@ -12,6 +12,7 @@ import {
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
+import { isPlayerAway } from '../lib/presence';
 import { playCardDraw } from '../lib/sound';
 import type { Room } from '../types/room';
 import AnimatedNumber from './AnimatedNumber';
@@ -173,6 +174,12 @@ function GameBoard({ room, roomCode, playerId }: GameBoardProps) {
               return (
                 <li key={id} className={id === currentTurnPlayerId ? 'is-current' : ''}>
                   <span className="player-name">
+                    {room.players[id] && (
+                      <span
+                        className={`presence-dot ${isPlayerAway(room.players[id]) ? 'is-away' : ''}`}
+                        title={isPlayerAway(room.players[id]) ? 'Away' : 'Online'}
+                      />
+                    )}
                     {room.players[id]?.name} ({pieceName(player.pieceId)})
                   </span>
                   <span className="player-roubles">

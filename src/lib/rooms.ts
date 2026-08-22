@@ -130,6 +130,24 @@ export async function choosePiece(
 }
 
 /**
+ * Records "this player is still here" for the presence/away indicator
+ * (see lib/presence.ts) - called on an interval by usePresenceHeartbeat
+ * for as long as a player is in a room, lobby or game. Failures (a brief
+ * network hiccup) are swallowed rather than surfaced anywhere - a missed
+ * heartbeat just means this player looks briefly "away" to everyone
+ * else until the next one lands, not a real error.
+ */
+export async function sendHeartbeat(roomCode: string, playerId: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'rooms', roomCode), {
+      [`players.${playerId}.lastSeenAt`]: Date.now(),
+    });
+  } catch {
+    // Swallowed - see doc comment above.
+  }
+}
+
+/**
  * Subscribes to live updates for a Room. Calls `onChange` immediately
  * with the current data, then again every time anyone's browser writes a
  * change - this is what makes the lobby (and later, the whole game)

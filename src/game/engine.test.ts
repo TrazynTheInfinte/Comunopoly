@@ -14,8 +14,10 @@ import {
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
+  devForceAutoPickPiece,
   devForceDisappear,
   devForceEndgame,
+  devForceSkipTurn,
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
@@ -3183,5 +3185,49 @@ describe('Dev Panel: force Disappear / force Endgame', () => {
     state = devForceEndgame(state);
 
     expect(state).toBe(afterFirst);
+  });
+});
+
+describe('Dev Panel: unstick the game (a disconnected player)', () => {
+  it('devForceSkipTurn ends the turn even with an unresolved pending decision', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedRoll(state, [2, 4]);
+    state = rollDice(state); // lands p1 on an unowned property - leaves a 'purchase' pendingDecision
+
+    expect(state.pendingDecision?.type).toBe('purchase');
+    expect(state.currentTurnIndex).toBe(0);
+
+    state = devForceSkipTurn(state);
+
+    expect(state.pendingDecision).toBeNull();
+    expect(state.currentTurnIndex).toBe(1); // actually passed to p2
+  });
+
+  it("devForceSkipTurn doesn't chain into another roll even if the abandoned turn had rolled doubles", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 11);
+    state = devSetForcedRoll(state, [2, 2]); // doubles - normally means roll again
+    state = rollDice(state);
+    expect(state.lastRollWasDoubles).toBe(true);
+
+    state = devForceSkipTurn(state);
+
+    expect(state.currentTurnIndex).toBe(1);
+  });
+
+  it('devForceAutoPickPiece picks the first available Piece for a player stuck choosing one', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devForceDisappear(state, 'p1');
+    expect(state.pendingPieceChoices).toContain('p1');
+
+    state = devForceAutoPickPiece(state, 'p1');
+
+    expect(state.pendingPieceChoices).not.toContain('p1');
+    expect(state.players.p1.pieceId).not.toBe('boot'); // boot is retired, can't be re-picked
+  });
+
+  it('devForceAutoPickPiece is a no-op for a player who is not actually stuck choosing one', () => {
+    const state = createInitialGameState(PLAYERS);
+    expect(devForceAutoPickPiece(state, 'p1')).toBe(state);
   });
 });

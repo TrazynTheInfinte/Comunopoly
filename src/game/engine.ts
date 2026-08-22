@@ -2440,3 +2440,31 @@ export function devForceEndgame(state: GameState): GameState {
     logEvent({ ...state, retiredPieceIds }, 'Comrade Stalin forced the Endgame to begin.'),
   );
 }
+
+/**
+ * Forces the current turn to end regardless of any pending decision -
+ * for unsticking a game where the active player has disconnected
+ * (closed their tab, dead wifi) mid-turn, since normal endTurn refuses
+ * to run at all while a decision (buy/skip, a card, a vote, etc.) is
+ * still unresolved. Whatever was pending is simply abandoned - there's
+ * no one left to resolve it - before running the real end-of-turn flow
+ * (jail bribe, Chernobyl countdown, Party Vanguard's extra turns, all
+ * of it), same as if they'd ended their turn normally.
+ */
+export function devForceSkipTurn(state: GameState): GameState {
+  const cleared: GameState = { ...state, pendingDecision: null, lastRollWasDoubles: false };
+  return logEvent(endTurn(cleared), "Comrade Stalin forced the turn to end.");
+}
+
+/**
+ * Auto-picks the first available Piece for a player stuck needing one
+ * (they Disappeared, then went offline before actually choosing a
+ * replacement) - another way a disconnected player can leave the game
+ * stalled, since nothing else moves the turn order past someone still
+ * in pendingPieceChoices. Not a real choice, just whatever's first.
+ */
+export function devForceAutoPickPiece(state: GameState, playerId: string): GameState {
+  const available = getAvailablePieceIds(state, playerId);
+  if (available.length === 0) return state;
+  return chooseNewPiece(state, playerId, available[0]);
+}

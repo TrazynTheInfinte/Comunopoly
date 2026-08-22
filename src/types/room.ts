@@ -16,6 +16,8 @@ export interface RoomPlayer {
   joinedAt: Timestamp | null;
   /** Null until chosen (beginner mode) or auto-assigned (experienced mode, immediately on joining). */
   pieceId: PieceId | null;
+  /** Client epoch-ms timestamp from this player's own last heartbeat (see lib/presence.ts) - absent for a player who joined before this existed, or hasn't sent one yet. Used to show an "away" indicator, not for anything the game logic depends on. */
+  lastSeenAt?: number;
 }
 
 export interface Room {

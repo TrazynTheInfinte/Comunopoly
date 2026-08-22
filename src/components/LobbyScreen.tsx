@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { STARTING_PIECES } from '../data/pieces';
 import { startGame } from '../lib/gameSync';
+import { isPlayerAway } from '../lib/presence';
 import { choosePiece } from '../lib/rooms';
 import type { PieceId } from '../types/game';
 import type { Room } from '../types/room';
@@ -49,6 +50,7 @@ function LobbyScreen({ room, roomCode, playerId }: LobbyScreenProps) {
       <ul className="player-list">
         {players.map(([id, player]) => (
           <li key={id} className={id === playerId ? 'is-you' : ''}>
+            <span className={`presence-dot ${isPlayerAway(player) ? 'is-away' : ''}`} title={isPlayerAway(player) ? 'Away' : 'Online'} />
             {player.name}
             {id === playerId ? ' (you)' : ''}
             {id === room.hostId ? ' ★' : ''}

@@ -16,8 +16,10 @@ import {
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
+  devForceAutoPickPiece,
   devForceDisappear,
   devForceEndgame,
+  devForceSkipTurn,
   devJumpToTile,
   devSetForcedCard,
   devSetForcedRoll,
@@ -263,4 +265,16 @@ export async function devDrawCardAndSync(
   deck: CardDeck,
 ) {
   await writeGameState(roomCode, devDrawCard(game, deck));
+}
+
+export async function devForceSkipTurnAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, devForceSkipTurn(game));
+}
+
+export async function devForceAutoPickPieceAndSync(
+  roomCode: string,
+  game: GameState,
+  playerId: string,
+) {
+  await writeGameState(roomCode, devForceAutoPickPiece(game, playerId));
 }

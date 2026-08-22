@@ -5,8 +5,11 @@ import RoomView from './components/RoomView';
 import SoundToggle from './components/SoundToggle';
 import { createRoom, joinRoom } from './lib/rooms';
 import {
+  clearActiveRoomCode,
   getOrCreatePlayerId,
+  getStoredActiveRoomCode,
   getStoredName,
+  storeActiveRoomCode,
   storeName,
 } from './lib/playerIdentity';
 import { wireAutoInitOnFirstInteraction } from './lib/sound';
@@ -31,12 +34,16 @@ function App() {
     wireAutoInitOnFirstInteraction();
   }, []);
 
-  const [view, setView] = useState<View>('landing');
+  // A room from a previous session (or before an accidental refresh)
+  // restores straight back into the lobby/game instead of the landing
+  // screen - see lib/playerIdentity.ts. RoomView clears this again if
+  // the room turns out to no longer exist (handleRoomNotFound below).
+  const [view, setView] = useState<View>(() => (getStoredActiveRoomCode() ? 'lobby' : 'landing'));
   const [mode, setMode] = useState<Mode>('join');
   const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
   const [name, setName] = useState(() => getStoredName());
   const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [activeRoomCode, setActiveRoomCode] = useState('');
+  const [activeRoomCode, setActiveRoomCode] = useState(() => getStoredActiveRoomCode() ?? '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -69,6 +76,7 @@ function App() {
           : await joinRoomAndReturnCode(roomCodeInput, trimmedName);
 
       storeName(trimmedName);
+      storeActiveRoomCode(roomCode);
       setActiveRoomCode(roomCode);
       setView('lobby');
     } catch (err) {
@@ -76,6 +84,13 @@ function App() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  /** The room we tried to restore into (or were just in) turned out to no longer exist - fall back to the landing screen instead of leaving RoomView stuck. */
+  function handleRoomNotFound() {
+    clearActiveRoomCode();
+    setActiveRoomCode('');
+    setView('landing');
   }
 
   async function joinRoomAndReturnCode(
@@ -95,7 +110,7 @@ function App() {
       <>
         <BrutalistBackground />
         <SoundToggle />
-        <RoomView roomCode={activeRoomCode} playerId={playerId} />
+        <RoomView roomCode={activeRoomCode} playerId={playerId} onRoomNotFound={handleRoomNotFound} />
       </>
     );
   }

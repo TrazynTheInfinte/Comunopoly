@@ -3,13 +3,16 @@ import { BOARD } from '../data/board';
 import { ALL_CARDS, findCard } from '../data/cards';
 import {
   devDrawCardAndSync,
+  devForceAutoPickPieceAndSync,
   devForceDisappearAndSync,
   devForceEndgameAndSync,
+  devForceSkipTurnAndSync,
   devJumpToTileAndSync,
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
 } from '../lib/gameSync';
+import { isPlayerAway } from '../lib/presence';
 import { debugPlayGameTrack, FINAL_TRACKS, STANDARD_TRACKS } from '../lib/sound';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
@@ -202,6 +205,34 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           </button>
         </div>
         <p className="hint">Forces that track to play right now, bypassing the normal shuffle.</p>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Unstick the game (a disconnected player)</p>
+        <div className="dev-panel-row">
+          <button onClick={() => devForceSkipTurnAndSync(roomCode, game)}>
+            Force Skip Current Turn
+          </button>
+        </div>
+        <p className="hint">
+          {(() => {
+            const currentId = game.turnOrder[game.currentTurnIndex];
+            const currentPlayer = room.players[currentId];
+            return `Current turn: ${currentPlayer?.name ?? currentId}${
+              currentPlayer && isPlayerAway(currentPlayer) ? ' (away)' : ''
+            }. Abandons anything they had pending (an unresolved buy, card, vote) and ends their turn as normal.`;
+          })()}
+        </p>
+        {game.pendingPieceChoices.length > 0 && (
+          <div className="dev-panel-row">
+            {game.pendingPieceChoices.map((id) => (
+              <button key={id} onClick={() => devForceAutoPickPieceAndSync(roomCode, game, id)}>
+                Auto-pick a Piece for {room.players[id]?.name}
+                {room.players[id] && isPlayerAway(room.players[id]) ? ' (away)' : ''}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="dev-panel-section">
