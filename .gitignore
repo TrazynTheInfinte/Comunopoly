@@ -21,6 +21,7 @@ dist-ssr
 # up - the actual assets live in public/ once wired in; these stay local.
 /communist_banner.jpg
 /example banner pos.png
+/mobile board example.png
 
 # Editor directories and files
 .vscode/*

@@ -69,6 +69,14 @@ function gridPositionOf(id: number): { row: number; col: number } {
   return { row: id - 29, col: 11 };
 }
 
+/** Shrinks tokens when more than one player shares a tile (most obviously everyone starting on STOY), so they still fit within that one square instead of overflowing it - see the --occupant-scale usage on .tile-token/.tile-token-icon in Board.css. */
+function occupantScaleFor(occupantCount: number): number {
+  if (occupantCount <= 1) return 1;
+  if (occupantCount === 2) return 0.72;
+  if (occupantCount === 3) return 0.58;
+  return 0.48;
+}
+
 function pieceName(pieceId: string): string {
   return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
 }
@@ -213,7 +221,10 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
             )}
 
             {occupants.length > 0 && (
-              <div className="tile-occupants">
+              <div
+                className="tile-occupants"
+                style={{ '--occupant-scale': occupantScaleFor(occupants.length) } as CSSProperties}
+              >
                 {occupants.map((id) => (
                   <span
                     key={id}
