@@ -479,6 +479,68 @@ describe('jail', () => {
 
     expect(state.players.p2.inJail).toBe(true);
   });
+
+  it('sends a player to jail the moment a payment drains them down to exactly 0 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6] },
+        p2: { ...state.players.p2, roubles: 6 },
+      },
+    };
+    state = endTurn(state); // p2's turn
+
+    state = devSetForcedRoll(state, [2, 4]); // p2 lands on tile 6, pays the full 6 rent
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(0);
+    expect(state.players.p2.inJail).toBe(true);
+  });
+
+  it("doesn't jail for a payment that leaves 1 rouble", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6] },
+        p2: { ...state.players.p2, roubles: 7 },
+      },
+    };
+    state = endTurn(state);
+
+    state = devSetForcedRoll(state, [2, 4]);
+    state = rollDice(state);
+
+    expect(state.players.p2.roubles).toBe(1);
+    expect(state.players.p2.inJail).toBe(false);
+  });
+
+  it("the Dev Panel's set-roubles tool also enforces the 0-roubles rule", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetRoubles(state, 'p1', 0);
+
+    expect(state.players.p1.roubles).toBe(0);
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
+  it('rolling doubles to escape jail fails (stays jailed) while at 0 roubles', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, position: 10, roubles: 0 },
+      },
+    };
+    state = devSetForcedRoll(state, [3, 3]); // would normally escape
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.position).toBe(10);
+  });
 });
 
 describe('The Kremlin', () => {
@@ -2391,6 +2453,9 @@ describe('Smuggling to the West', () => {
 
     expect(state.players.p1.roubles).toBe(0);
     expect(state.players.p1.pendingWestRoubles).toBe(1000);
+    // Smuggling every last rouble away leaves 0 on hand - the house rule
+    // catches that same as any other way of running dry.
+    expect(state.players.p1.inJail).toBe(true);
   });
 
   it('landing back on Free Parking secures pending West roubles', () => {

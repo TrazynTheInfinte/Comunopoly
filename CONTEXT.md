@@ -21,7 +21,7 @@ The act of the State confiscating assets, either from a Disappearing player or v
 The 100-Rouble payment a jailed player must make at the end of each of their turns to avoid Disappearing. Distinct from rolling doubles, which is how a player leaves jail outright.
 
 **Hoarding Limit**:
-House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead.
+House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead. Mirrored at the bottom end by Destitute: hitting exactly 0 Roubles (even via a payment they could afford) has the same jailing/no-leaving-jail effect.
 
 **Repeat Doubles**:
 House rule: a player who rolls doubles three times total is sent to jail instead of moving on that third roll. Unlike classic Monopoly, these three doubles don't need to be consecutive or within the same turn — the count only resets when it actually triggers this jailing, or when the player Disappears. Every other route to jail (the Go To Jail tile, cards, NKVD, The Kremlin, etc.) leaves the count untouched.
@@ -51,7 +51,7 @@ A Piece's permanent removal from play: its Roubles, properties, and West stash a
 _Avoid_: bankrupt, eliminated, lose, die, knocked out — none of these fit, since the human player keeps playing under a new Piece.
 
 **Destitute**:
-The state of having run out of Roubles. Sends the player to jail. A precursor that can lead to Disappearing (if they can't pay the jail Bribe), but is not itself Disappearing.
+The state of having run out of Roubles — either because a payment couldn't be afforded at all (the debt is forgiven), or because an affordable payment drained the player down to exactly 0. Either way sends the player to jail. A precursor that can lead to Disappearing (if they can't pay the jail Bribe), but is not itself Disappearing.
 _Avoid_: bankrupt
 
 **Piece Pool**:

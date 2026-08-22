@@ -398,27 +398,29 @@ function giveRoubles(
       [playerId]: { ...player, roubles: player.roubles + amount },
     },
   };
-  // House rule: over 1000 roubles sends you straight to jail. Only
-  // checked on a gain, not a payment - roubles going down can't newly
-  // cross the limit, so there's nothing to catch there.
-  return amount > 0 ? applyOverRoublesJailRule(next, playerId) : next;
+  return applyRoublesJailRules(next, playerId);
 }
 
-/** House rule: hoarding over 1000 roubles sends you straight to jail. Also used directly by the Dev Panel's "set roubles" tool, so a manually-set balance can't leave the game in a state this rule wouldn't otherwise allow. */
-function applyOverRoublesJailRule(state: GameState, playerId: string): GameState {
+/** House rules: hoarding over 1000 roubles, or running completely out (down to 0), both send you straight to jail. Also used directly by the Dev Panel's "set roubles" tool, so a manually-set balance can't leave the game in a state these rules wouldn't otherwise allow. No-op if already in jail - there's nothing further to do there. */
+function applyRoublesJailRules(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
-  if (player.roubles > OVER_ROUBLES_JAIL_LIMIT && !player.inJail) {
+  if (player.inJail) return state;
+  if (player.roubles > OVER_ROUBLES_JAIL_LIMIT) {
     return logEvent(
       sendToJail(state, playerId),
       `Amassed over ${OVER_ROUBLES_JAIL_LIMIT} roubles - sent to jail!`,
     );
   }
+  if (player.roubles <= 0) {
+    return logEvent(sendToJail(state, playerId), 'Down to 0 roubles - Destitute, sent to jail!');
+  }
   return state;
 }
 
-/** House rule: you can't leave jail (by any means - doubles, Denounce Your Collaborators, a Show Trial release) while still over the 1000-rouble limit; it sends you straight back in instead. */
+/** House rules: you can't leave jail (by any means - doubles, Denounce Your Collaborators, a Show Trial release) while over 1000 roubles or down to 0; either sends you straight back in instead. */
 function canLeaveJail(state: GameState, playerId: string): boolean {
-  return state.players[playerId].roubles <= OVER_ROUBLES_JAIL_LIMIT;
+  const roubles = state.players[playerId].roubles;
+  return roubles > 0 && roubles <= OVER_ROUBLES_JAIL_LIMIT;
 }
 
 function payRoubles(
@@ -1574,7 +1576,7 @@ function resolveJailRoll(
 
   if (isDoubles) {
     if (!canLeaveJail(next, playerId)) {
-      return logEvent(next, 'Rolled doubles, but have over 1000 roubles - stayed locked up.');
+      return logEvent(next, "Rolled doubles, but your roubles don't allow leaving jail - stayed locked up.");
     }
     const escaped: GameState = {
       ...next,
@@ -1788,7 +1790,7 @@ export function useDenounceCollaborators(
   if (!player.heldCardIds.includes('denounceCollaborators')) return state;
   if (!player.inJail || !target || targetPlayerId === playerId) return state;
   if (!canLeaveJail(state, playerId)) {
-    return logEvent(state, 'Too many roubles to leave jail - Denounce Your Collaborators failed.');
+    return logEvent(state, "Your roubles don't allow leaving jail - Denounce Your Collaborators failed.");
   }
 
   const next: GameState = {
@@ -1911,7 +1913,7 @@ function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
     return disappearPlayer(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
   }
   if (!canLeaveJail(next, activeVote.targetPlayerId)) {
-    return logEvent(next, 'Voted to release, but they have over 1000 roubles - sent straight back to jail.');
+    return logEvent(next, "Voted to release, but their roubles don't allow it - sent straight back to jail.");
   }
   const target = next.players[activeVote.targetPlayerId];
   return logEvent(
@@ -2355,7 +2357,7 @@ export function devSetRoubles(
     ...state,
     players: { ...state.players, [playerId]: { ...player, roubles } },
   };
-  return applyOverRoublesJailRule(next, playerId);
+  return applyRoublesJailRules(next, playerId);
 }
 
 export function devSetForcedRoll(
