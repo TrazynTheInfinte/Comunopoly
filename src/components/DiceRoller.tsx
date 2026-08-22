@@ -64,15 +64,25 @@ function DieFace({ value }: { value: number }) {
  * waiting for the token's walk to finish revealing everything else.
  *
  * Two separate things can start a tumble: the local player clicking
- * Roll Dice (rollTrigger, immediate) and game.lastRoll actually
+ * Roll Dice (rollTrigger, immediate) and the roll's actual VALUES
  * changing once Firestore delivers the result (covers every other
  * viewer, and re-confirms the real values for the roller too - whoever
  * triggers it, the settle always uses whatever the latest live roll
  * actually is, read fresh rather than captured in a stale closure).
+ *
+ * Deliberately keyed off the roll's values (a "3-5" style string), not
+ * game.lastRoll's object reference - Firestore reconstructs the entire
+ * document from scratch on every single snapshot, so lastRoll gets a
+ * brand-new array reference on EVERY update, including ones with
+ * nothing to do with rolling (buying a property, paying a mortgage,
+ * ending a turn...). Keying off the reference replayed the tumble on
+ * every unrelated click; keying off the values only replays it when a
+ * roll actually happened.
  */
 function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
   const currentPlayerId = game.turnOrder[game.currentTurnIndex];
   const diceCount = game.players[currentPlayerId]?.pieceId === 'thimble' ? 1 : 2;
+  const rollSignature = game.lastRoll ? `${game.lastRoll[0]}-${game.lastRoll[1]}` : null;
 
   const [isRolling, setIsRolling] = useState(false);
   const [displayValues, setDisplayValues] = useState<[number, number] | null>(game.lastRoll);
@@ -96,6 +106,15 @@ function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
       return;
     }
 
+    if (!rollSignature) {
+      // The turn ended (lastRoll cleared) - go idle, no tumble.
+      clearInterval(intervalRef.current);
+      clearTimeout(timeoutRef.current);
+      setIsRolling(false);
+      setDisplayValues(null);
+      return;
+    }
+
     clearInterval(intervalRef.current);
     clearTimeout(timeoutRef.current);
 
@@ -112,11 +131,12 @@ function DiceRoller({ game, rollTrigger }: DiceRollerProps) {
       setIsRolling(false);
       setDisplayValues(latestRollRef.current);
     }, ROLL_ANIMATION_MS);
-    // rollTrigger (a local click) and game.lastRoll (the real result
-    // landing) are two different signals that both mean "a roll just
-    // happened" - either should (re)start the tumble.
+    // rollTrigger (a local click) and rollSignature (the real result
+    // landing, or clearing at end of turn) are two different signals
+    // that both mean "something rolling-related just happened" - either
+    // should (re)start the tumble.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rollTrigger, game.lastRoll, diceCount]);
+  }, [rollTrigger, rollSignature, diceCount]);
 
   useEffect(() => {
     return () => {
