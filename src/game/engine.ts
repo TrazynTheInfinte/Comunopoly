@@ -76,6 +76,8 @@ export function createInitialGameState(
       isSpectating: false,
       sentToJailCount: 0,
       doublesRolledCount: 0,
+      consecutiveAfkSkips: 0,
+      isAfkSpectating: false,
     };
   }
 
@@ -526,6 +528,8 @@ function disappearPlayer(
         westRoubles: 0,
         pendingWestRoubles: 0,
         doublesRolledCount: 0,
+        consecutiveAfkSkips: 0,
+        isAfkSpectating: false,
       },
     },
   };
@@ -1636,7 +1640,15 @@ export function rollDice(
   const isDoubles = die1 === die2;
   const steps = die1 + die2;
 
-  let next: GameState = { ...state, forcedRoll: null, lastRoll: roll };
+  let next: GameState = {
+    ...state,
+    forcedRoll: null,
+    lastRoll: roll,
+    // A real roll is unambiguous proof they're actually here - clears
+    // any afkSkipTurn streak so it doesn't carry over to some unrelated
+    // future moment they're briefly away for a normal reason.
+    players: { ...state.players, [playerId]: { ...player, consecutiveAfkSkips: 0 } },
+  };
   next = logEvent(
     next,
     player.pieceId === 'thimble'
@@ -2449,19 +2461,101 @@ export function devForceEndgame(state: GameState): GameState {
   );
 }
 
+/** Abandons whatever's pending for the current player and runs the real end-of-turn flow (jail bribe, Chernobyl countdown, Party Vanguard's extra turns, all of it) without logging anything itself - shared by devForceSkipTurn (a host override) and afkSkipTurn (an automatic away-player skip), which each log a different reason for it. */
+function abandonTurnAndEnd(state: GameState): GameState {
+  const cleared: GameState = { ...state, pendingDecision: null, lastRollWasDoubles: false };
+  return endTurn(cleared);
+}
+
 /**
  * Forces the current turn to end regardless of any pending decision -
  * for unsticking a game where the active player has disconnected
  * (closed their tab, dead wifi) mid-turn, since normal endTurn refuses
  * to run at all while a decision (buy/skip, a card, a vote, etc.) is
  * still unresolved. Whatever was pending is simply abandoned - there's
- * no one left to resolve it - before running the real end-of-turn flow
- * (jail bribe, Chernobyl countdown, Party Vanguard's extra turns, all
- * of it), same as if they'd ended their turn normally.
+ * no one left to resolve it - before running the real end-of-turn flow,
+ * same as if they'd ended their turn normally.
  */
 export function devForceSkipTurn(state: GameState): GameState {
-  const cleared: GameState = { ...state, pendingDecision: null, lastRollWasDoubles: false };
-  return logEvent(endTurn(cleared), "Comrade Stalin forced the turn to end.");
+  return logEvent(abandonTurnAndEnd(state), "Comrade Stalin forced the turn to end.");
+}
+
+// After this many automatic away-skips in a row (see afkSkipTurn) with
+// no real action from them in between, they're benched (isAfkSpectating)
+// instead of skipped again - picked as a middle point in the user's
+// "3-5 turns" ask.
+const AFK_SKIP_LIMIT = 4;
+
+/**
+ * Automatically skips the current player's turn for being away too
+ * long - same abandon-and-end mechanism as devForceSkipTurn, but
+ * triggered by one of two client-side watchdogs instead of a host's
+ * click: useAfkSelfCheck (a player idle on their own actual turn gets
+ * a "still there?" prompt, and unanswered self-skips - runs on their
+ * own browser, so there's only ever one writer) or useHostAfkWatchdog
+ * (a player who looks disconnected per the presence heartbeat - only
+ * the host's browser runs this one, for the same one-writer reason).
+ *
+ * Counts consecutive skips per player (see consecutiveAfkSkips -
+ * cleared the moment they roll for real, or confirm they're still
+ * there). Once AFK_SKIP_LIMIT is reached, benches them into spectating
+ * instead of skipping again - unlike a real Disappear/kick, this
+ * doesn't seize anything and can be undone with rejoinFromAfk, since
+ * they might just be stepping away rather than gone for good.
+ */
+export function afkSkipTurn(state: GameState): GameState {
+  const playerId = currentPlayerId(state);
+  const player = state.players[playerId];
+  const consecutiveAfkSkips = player.consecutiveAfkSkips + 1;
+
+  if (consecutiveAfkSkips >= AFK_SKIP_LIMIT) {
+    let next: GameState = {
+      ...state,
+      players: {
+        ...state.players,
+        [playerId]: {
+          ...player,
+          consecutiveAfkSkips: 0,
+          isSpectating: true,
+          isAfkSpectating: true,
+          extraTurns: 0,
+        },
+      },
+    };
+    next = removeFromFinalLap(next, playerId);
+    next = removeFromPendingTargetChoices(next, playerId);
+    return logEvent(abandonTurnAndEnd(next), 'Away too long - benched. Can rejoin any time.');
+  }
+
+  const next: GameState = {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, consecutiveAfkSkips } },
+  };
+  return logEvent(abandonTurnAndEnd(next), 'Turn skipped - away too long.');
+}
+
+/** A player confirming ("yes, I'm still here") in response to useAfkSelfCheck's prompt - clears their consecutive-away-skip count without otherwise touching their turn, so a string of past skips doesn't bench them the next time they're briefly away for an unrelated reason. A no-op if it's not actually their turn (the prompt should already be gone by the time a stale click like that could land) or they had no count to clear. */
+export function confirmStillHere(state: GameState, playerId: string): GameState {
+  if (currentPlayerId(state) !== playerId) return state;
+  const player = state.players[playerId];
+  if (player.consecutiveAfkSkips === 0) return state;
+  return {
+    ...state,
+    players: { ...state.players, [playerId]: { ...player, consecutiveAfkSkips: 0 } },
+  };
+}
+
+/** Resumes a player benched by afkSkipTurn (isAfkSpectating) - the one way out of that state, unlike a real Disappear/kick's permanent spectating. They rejoin turn order wherever it naturally reaches them next; nothing about their assets/position changed while benched, since nothing was ever seized. */
+export function rejoinFromAfk(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  if (!player || !player.isAfkSpectating) return state;
+  return logEvent(
+    {
+      ...state,
+      players: { ...state.players, [playerId]: { ...player, isSpectating: false, isAfkSpectating: false } },
+    },
+    'Rejoined the game after being benched for being away.',
+  );
 }
 
 /**
@@ -2479,7 +2573,12 @@ export function devForceSkipTurn(state: GameState): GameState {
  */
 export function devKickPlayer(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
-  if (!player || player.isSpectating) return state;
+  // Someone AFK-benched (isAfkSpectating) is still fair game - that
+  // state is meant to be temporary (see rejoinFromAfk), and a host
+  // watching them never come back needs a way to actually close it out
+  // instead of leaving them stuck in permanent limbo. A real kick (or
+  // an earlier one) is the one thing that's already final.
+  if (!player || (player.isSpectating && !player.isAfkSpectating)) return state;
 
   let next = disappearPlayer(state, playerId, 'kicked by Comrade Stalin');
   next = {

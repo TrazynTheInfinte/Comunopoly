@@ -251,11 +251,15 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
             <label>
               {room.players[id]?.name}
               {isPlayerAway(room.players[id]) ? ' (away)' : ''}
-              {game.players[id].isSpectating ? ' (already spectating)' : ''}
+              {game.players[id].isAfkSpectating
+                ? ' (AFK-benched)'
+                : game.players[id].isSpectating
+                  ? ' (already spectating)'
+                  : ''}
             </label>
             <button
               onClick={() => devKickPlayerAndSync(roomCode, game, id)}
-              disabled={game.players[id].isSpectating}
+              disabled={game.players[id].isSpectating && !game.players[id].isAfkSpectating}
             >
               Kick
             </button>

@@ -8,6 +8,7 @@ import {
   acceptVolgaOffer,
   accuseOfTrotsky,
   acknowledgeCard,
+  afkSkipTurn,
   answerNkvdQuiz,
   buildHouse,
   buyProperty,
@@ -16,6 +17,7 @@ import {
   chooseCard,
   chooseEndgameTarget,
   chooseNewPiece,
+  confirmStillHere,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -31,6 +33,7 @@ import {
   drawFromPile,
   endTurn,
   mortgageProperty,
+  rejoinFromAfk,
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
@@ -324,4 +327,16 @@ export async function devForceAutoPickPieceAndSync(
   playerId: string,
 ) {
   await writeGameState(roomCode, devForceAutoPickPiece(game, playerId));
+}
+
+export async function afkSkipTurnAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, afkSkipTurn(game));
+}
+
+export async function confirmStillHereAndSync(roomCode: string, game: GameState, playerId: string) {
+  await writeGameState(roomCode, confirmStillHere(game, playerId));
+}
+
+export async function rejoinFromAfkAndSync(roomCode: string, game: GameState, playerId: string) {
+  await writeGameState(roomCode, rejoinFromAfk(game, playerId));
 }

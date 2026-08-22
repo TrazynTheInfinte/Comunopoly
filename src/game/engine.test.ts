@@ -3,6 +3,7 @@ import {
   acceptVolgaOffer,
   accuseOfTrotsky,
   acknowledgeCard,
+  afkSkipTurn,
   answerNkvdQuiz,
   buildHouse,
   buyProperty,
@@ -11,6 +12,7 @@ import {
   chooseCard,
   chooseEndgameTarget,
   chooseNewPiece,
+  confirmStillHere,
   createInitialGameState,
   declineVolgaOffer,
   devDrawCard,
@@ -27,6 +29,7 @@ import {
   endTurn,
   getAvailablePieceIds,
   mortgageProperty,
+  rejoinFromAfk,
   resolveCardTarget,
   resolveCatRedirect,
   resolveRubberDuckEncounter,
@@ -3318,5 +3321,133 @@ describe('Dev Panel: kick a player', () => {
 
     expect(state.pendingPieceChoices).not.toContain('p1');
     expect(state.players.p1.isSpectating).toBe(true);
+  });
+});
+
+describe('AFK handling (useAfkSelfCheck / useHostAfkWatchdog)', () => {
+  it('afkSkipTurn ends the turn (abandoning any pending decision) and counts the skip', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devSetForcedRoll(state, [2, 4]);
+    state = rollDice(state); // lands p1 on an unowned property - leaves a pending purchase decision
+    expect(state.pendingDecision?.type).toBe('purchase');
+
+    state = afkSkipTurn(state);
+
+    expect(state.pendingDecision).toBeNull();
+    expect(state.currentTurnIndex).toBe(1); // actually passed to p2
+    expect(state.players.p1.consecutiveAfkSkips).toBe(1);
+    expect(state.players.p1.isSpectating).toBe(false);
+  });
+
+  it('benches the player instead of skipping again once the away-skip limit is reached', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, consecutiveAfkSkips: 3 } } };
+
+    state = afkSkipTurn(state);
+
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.players.p1.isAfkSpectating).toBe(true);
+    expect(state.players.p1.consecutiveAfkSkips).toBe(0); // reset, not left sitting at the limit
+    expect(state.currentTurnIndex).toBe(1); // still moved on to p2
+  });
+
+  it("benching (unlike a real Disappear/kick) doesn't touch roubles or properties - nothing was seized", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, consecutiveAfkSkips: 3, roubles: 700, ownedTileIds: [6] },
+      },
+    };
+
+    state = afkSkipTurn(state);
+
+    expect(state.players.p1.roubles).toBe(700);
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+  });
+
+  it('benching pulls the player off finalLapRemaining/pendingTargetChoices, same cascades as a kick', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'iron' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+    ]);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, consecutiveAfkSkips: 3 } },
+      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null },
+    };
+
+    state = afkSkipTurn(state);
+
+    expect(state.endgame?.pendingTargetChoices).toEqual([]);
+    expect(state.endgame?.results).not.toBeNull(); // p1 was the last one blocking it
+  });
+
+  it('rollDice clears an away-skip streak the moment the player actually rolls for real', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, consecutiveAfkSkips: 2 } } };
+    state = devSetForcedRoll(state, [2, 4]);
+
+    state = rollDice(state);
+
+    expect(state.players.p1.consecutiveAfkSkips).toBe(0);
+  });
+
+  it('confirmStillHere clears the streak for the current player without ending their turn', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, consecutiveAfkSkips: 2 } } };
+
+    state = confirmStillHere(state, 'p1');
+
+    expect(state.players.p1.consecutiveAfkSkips).toBe(0);
+    expect(state.currentTurnIndex).toBe(0); // still p1's turn
+  });
+
+  it("confirmStillHere is a no-op for anyone other than whoever's turn it currently is", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, consecutiveAfkSkips: 2 } } };
+
+    state = confirmStillHere(state, 'p2'); // it's p1's turn, not p2's
+
+    expect(state.players.p2.consecutiveAfkSkips).toBe(2); // unchanged
+  });
+
+  it('rejoinFromAfk resumes a benched player', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, isSpectating: true, isAfkSpectating: true } },
+    };
+
+    state = rejoinFromAfk(state, 'p1');
+
+    expect(state.players.p1.isSpectating).toBe(false);
+    expect(state.players.p1.isAfkSpectating).toBe(false);
+  });
+
+  it("rejoinFromAfk is a no-op for a player who isn't actually AFK-benched (e.g. a real kick/Disappear)", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devKickPlayer(state, 'p1'); // permanent spectating, isAfkSpectating stays false
+
+    expect(rejoinFromAfk(state, 'p1')).toBe(state);
+  });
+
+  it('devKickPlayer can still permanently remove an AFK-benched player who never comes back', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, isSpectating: true, isAfkSpectating: true, roubles: 500, ownedTileIds: [6] },
+      },
+    };
+
+    state = devKickPlayer(state, 'p1');
+
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.players.p1.isAfkSpectating).toBe(false); // no longer just benched - this is permanent now
+    expect(state.players.p1.roubles).toBe(1000); // seized, unlike a plain AFK bench
+    expect(state.players.p1.ownedTileIds).toEqual([]);
   });
 });

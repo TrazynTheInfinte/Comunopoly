@@ -9,6 +9,7 @@ import {
   buyPropertyAndSync,
   declineVolgaOfferAndSync,
   endTurnAndSync,
+  rejoinFromAfkAndSync,
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
@@ -31,7 +32,9 @@ import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import { useAfkSelfCheck } from './useAfkSelfCheck';
 import { useGameMusic } from './useGameMusic';
+import { useHostAfkWatchdog } from './useHostAfkWatchdog';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
 import './GameBoard.css';
@@ -72,6 +75,14 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   // game isn't available yet.
   useSoundEvents(game?.log ?? []);
   useGameMusic(game);
+  // Both computed defensively here (game may still be undefined on this
+  // render) so the two watchdog hooks below - which also can't be
+  // called conditionally - have real values rather than needing their
+  // own duplicate "is game even loaded yet" checks.
+  const isMyTurnEarly = !!game && game.turnOrder[game.currentTurnIndex] === playerId;
+  const isHost = playerId === room.hostId;
+  const afkPrompt = useAfkSelfCheck(roomCode, game, playerId, isMyTurnEarly);
+  useHostAfkWatchdog(roomCode, room, game, isHost);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
@@ -116,6 +127,18 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
 
   return (
     <main className="game-board">
+      {afkPrompt.visible && (
+        <div className="afk-prompt-overlay">
+          <div className="afk-prompt">
+            <p>Still there? It's your turn.</p>
+            <button onClick={afkPrompt.confirmStillHere}>Yes, I'm here</button>
+            <p className="afk-prompt-countdown">
+              Turn skips automatically in {afkPrompt.secondsLeft}s...
+            </p>
+          </div>
+        </div>
+      )}
+
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
       <p className="turn-indicator">
@@ -213,6 +236,15 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
         </section>
 
         <section className="layout-actions">
+          {me?.isAfkSpectating && (
+            <div className="purchase-prompt card-prompt afk-rejoin-banner">
+              <p>You were benched for being away too long - you're just spectating for now.</p>
+              <button onClick={() => rejoinFromAfkAndSync(roomCode, game, playerId)}>
+                Rejoin the Game
+              </button>
+            </div>
+          )}
+
           {myPendingPieceChoice && (
             <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
           )}

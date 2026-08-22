@@ -146,6 +146,10 @@ export interface GamePlayerState {
   sentToJailCount: number;
   /** Doubles this player has rolled, cumulative across turns (not necessarily consecutive) - 3 sends them to jail instead of moving. Only resets when that happens, or when this player Disappears; every other route to jail (the Go To Jail tile, cards, NKVD, etc.) leaves it untouched. Meaningless while inJail - see resolveJailRoll, which suspends this rule entirely. */
   doublesRolledCount: number;
+  /** Consecutive automatic away-skips (see afkSkipTurn in game/engine.ts) - resets the moment they roll for real (rollDice) or confirm they're still there (confirmStillHere). Reaching the limit inside afkSkipTurn benches them (isAfkSpectating) instead of skipping again. */
+  consecutiveAfkSkips: number;
+  /** True only while spectating because afkSkipTurn benched them for being away too long - distinct from isSpectating alone, which a real Disappear/kick also sets but permanently (assets seized, no way back). This one can be undone with rejoinFromAfk, since nothing was ever seized. */
+  isAfkSpectating: boolean;
 }
 
 /**
