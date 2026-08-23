@@ -27,14 +27,23 @@
   text-align: center;
   white-space: nowrap;
   box-shadow: 0 4px 0 rgba(17, 17, 17, 0.3);
-  animation: your-turn-banner-sweep 2.2s cubic-bezier(0.3, 0, 0.2, 1);
+  /* Quick slide in, a long hold fully on-screen, then a quick slide
+     out - not a constant-speed sweep clear across, which didn't leave
+     enough time to actually read it. Same shape as NowPlayingBanner. */
+  animation: your-turn-banner-sweep 4.8s ease-in-out;
 }
 
 @keyframes your-turn-banner-sweep {
-  from {
+  0% {
     transform: translateX(-100%);
   }
-  to {
+  8% {
+    transform: translateX(0);
+  }
+  92% {
+    transform: translateX(0);
+  }
+  100% {
     transform: translateX(100%);
   }
 }

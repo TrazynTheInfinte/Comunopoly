@@ -23,6 +23,7 @@ dist-ssr
 /example banner pos.png
 /mobile board example.png
 /new_mobile_board.png
+/notcentered.png
 
 # Editor directories and files
 .vscode/*

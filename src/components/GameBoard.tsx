@@ -46,6 +46,7 @@ import { useHostAfkWatchdog } from './useHostAfkWatchdog';
 import { useIsDesktop } from './useIsDesktop';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
+import { useTurnStartNonce } from './useTurnStartNonce';
 import { useYourTurnChime } from './useYourTurnChime';
 import './GameBoard.css';
 
@@ -120,6 +121,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const afkPrompt = useAfkSelfCheck(roomCode, game, playerId, isMyTurnEarly);
   useHostAfkWatchdog(roomCode, room, game, isHost);
   useYourTurnChime(isMyTurnEarly);
+  const turnStartNonce = useTurnStartNonce(isMyTurnEarly);
   const handleCardFlight = useCallback(
     (deck: CardDeck, from: DOMRect, to: DOMRect) => setCardFlight({ deck, from, to }),
     [],
@@ -197,7 +199,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
 
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
-      {isMyTurn && <YourTurnBanner key={currentTurnPlayerId} />}
+      {turnStartNonce > 0 && <YourTurnBanner key={turnStartNonce} />}
       {currentTrackName && <NowPlayingBanner key={currentTrackName} trackName={currentTrackName} />}
 
       <p className="turn-indicator">
