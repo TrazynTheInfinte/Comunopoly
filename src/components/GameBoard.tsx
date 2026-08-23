@@ -56,6 +56,20 @@ function pieceName(pieceId: string): string {
   return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
 }
 
+// Player IDs are crypto.randomUUID() (see lib/playerIdentity.ts) - a
+// pattern distinctive enough that a plain regex match against one never
+// collides with normal log text. engine.ts can't put a player's actual
+// display name in a log message itself (it only knows player IDs -
+// display names live on the separate Room document, see the standing
+// note in game/engine.ts), so a message that needs to name someone by
+// name embeds their raw ID instead, and this substitutes it back in at
+// display time, where the Room is available.
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+function formatLogEntry(entry: string, room: Room): string {
+  return entry.replace(UUID_PATTERN, (id) => room.players[id]?.name ?? 'a departed player');
+}
+
 // The actual board visual lives in <Board> below; everything in this
 // file past that is still the plain functional readout (status, actions,
 // decision prompts, event log) - that part isn't a placeholder, it's
@@ -427,7 +441,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               .slice()
               .reverse()
               .map((entry, index) => (
-                <li key={index}>{entry}</li>
+                <li key={index}>{formatLogEntry(entry, room)}</li>
               ))}
           </ul>
 

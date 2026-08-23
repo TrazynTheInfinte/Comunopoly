@@ -110,6 +110,7 @@ export function createInitialGameState(
     endgame: null,
     log: ['The game begins.'],
     carryWestOnDisappear,
+    lastJailRedirect: null,
   };
 
   // Degenerate edge case: a full 12-player room claims every Piece right
@@ -148,7 +149,7 @@ function checkEndgameTrigger(state: GameState): GameState {
   return logEvent(
     {
       ...state,
-      endgame: { finalLapRemaining, pendingTargetChoices: [], targetChoices: {}, results: null },
+      endgame: { finalLapRemaining, pendingTargetChoices: [], targetChoices: {}, results: null, scoreBreakdowns: null },
     },
     'The Piece Pool is empty - the Endgame begins. Everyone gets one more turn.',
   );
@@ -197,6 +198,7 @@ function computeEndgameScores(state: GameState): GameState {
   const targets = state.endgame.targetChoices;
   const pieceOf = (id: string) => state.players[id].pieceId;
   const findByPiece = (pieceId: PieceId) => activeIds.find((id) => pieceOf(id) === pieceId);
+  const nameOf = (id: string) => STARTING_PIECES.find((p) => p.id === pieceOf(id))?.name ?? pieceOf(id);
 
   // T-Rex's giveaway changes other players' actual hand, so it has to
   // happen before anything reads "money in hand."
@@ -204,6 +206,14 @@ function computeEndgameScores(state: GameState): GameState {
   for (const id of activeIds) roubles[id] = state.players[id].roubles;
 
   const scores: Record<string, number> = {};
+  // The actual numbers plugged into each player's formula, in plain
+  // text - kept alongside scores (not reconstructed later from the
+  // final GameState) because some of these inputs don't survive past
+  // this function: T-Rex's redistributed cash only ever lives in the
+  // local `roubles` record above, and Iron/Thimble/Penguin/Cat all
+  // read or overwrite another player's *already-computed* score, which
+  // isn't preserved anywhere once Cat's rotation runs.
+  const breakdowns: Record<string, string> = {};
   const penguinId = findByPiece('penguin');
   const penguinTargetId =
     penguinId && targets[penguinId] && activeIds.includes(targets[penguinId]) && targets[penguinId] !== penguinId
@@ -214,13 +224,21 @@ function computeEndgameScores(state: GameState): GameState {
   if (trexId) {
     const others = activeIds.filter((id) => id !== trexId);
     if (others.length > 0) {
-      const share = Math.floor(roubles[trexId] / others.length);
-      const remainder = roubles[trexId] - share * others.length;
+      const trexOriginalRoubles = roubles[trexId];
+      const share = Math.floor(trexOriginalRoubles / others.length);
+      const remainder = trexOriginalRoubles - share * others.length;
       for (const id of others) roubles[id] += share;
       const seized = state.players[trexId].ownedTileIds.length;
       scores[trexId] = others.length * seized - remainder;
+      breakdowns[trexId] =
+        `₽${trexOriginalRoubles} split among ${others.length} players (₽${share} each` +
+        (remainder > 0 ? `, ₽${remainder} left over` : '') +
+        `) × ${seized} properties seized` +
+        (remainder > 0 ? ` − ₽${remainder} left over` : '') +
+        ` = ${scores[trexId]}`;
     } else {
       scores[trexId] = 0;
+      breakdowns[trexId] = 'No other players left to split cash with - Score is 0.';
     }
     roubles[trexId] = 0;
   }
@@ -236,40 +254,75 @@ function computeEndgameScores(state: GameState): GameState {
   // Each Piece's own formula, run off the (possibly T-Rex-adjusted)
   // Roubles - covers everyone except Iron/Thimble (transfers, below),
   // Penguin (needs its target's hypothetical, below), Cat (always 0,
-  // then rotated, below), and T-Rex (already computed above).
-  const baseScoreFor = (id: string): number => {
+  // then rotated, below), and T-Rex (already computed above). Returns
+  // both the number and the plain-text math that produced it.
+  const baseScoreFor = (id: string): { score: number; breakdown: string } => {
     const player = state.players[id];
     const properties = player.ownedTileIds.length;
     switch (player.pieceId) {
-      case 'boot':
-        return Math.floor((roubles[id] * properties) / (activeIds.length + 1));
-      case 'battleship':
-        return roubles[id] * houseCountOf(id);
-      case 'car':
-        return player.westRoubles * hotelCountOf(id);
-      case 'dog':
-        return Math.floor(player.westRoubles / 2);
+      case 'boot': {
+        const score = Math.floor((roubles[id] * properties) / (activeIds.length + 1));
+        return {
+          score,
+          breakdown: `₽${roubles[id]} cash × ${properties} properties ÷ (${activeIds.length} players + 1) = ${score}`,
+        };
+      }
+      case 'battleship': {
+        const houses = houseCountOf(id);
+        return { score: roubles[id] * houses, breakdown: `₽${roubles[id]} cash × ${houses} houses = ${roubles[id] * houses}` };
+      }
+      case 'car': {
+        const hotels = hotelCountOf(id);
+        return {
+          score: player.westRoubles * hotels,
+          breakdown: `₽${player.westRoubles} in the West × ${hotels} hotels = ${player.westRoubles * hotels}`,
+        };
+      }
+      case 'dog': {
+        const score = Math.floor(player.westRoubles / 2);
+        return { score, breakdown: `₽${player.westRoubles} in the West ÷ 2 = ${score}` };
+      }
       case 'wheelBarrel':
-        return player.westRoubles * properties;
+        return {
+          score: player.westRoubles * properties,
+          breakdown: `₽${player.westRoubles} in the West × ${properties} properties = ${player.westRoubles * properties}`,
+        };
       case 'rubberDuck':
-        return player.sentToJailCount * properties;
+        return {
+          score: player.sentToJailCount * properties,
+          breakdown: `${player.sentToJailCount} players jailed × ${properties} properties = ${player.sentToJailCount * properties}`,
+        };
       default:
-        return 0; // hat scores 0 anyway; iron/thimble/penguin/cat/trex are handled elsewhere
+        return { score: 0, breakdown: 'Always 0.' }; // hat scores 0 anyway; iron/thimble/penguin/cat/trex are handled elsewhere
     }
   };
 
   for (const id of activeIds) {
     if (id === trexId) continue;
     const pieceId = pieceOf(id);
-    if (id === penguinTargetId || pieceId === 'cat' || pieceId === 'iron' || pieceId === 'thimble') {
-      scores[id] = 0; // locked at 0 (Penguin's target), or filled in below (Cat/Iron/Thimble)
+    if (id === penguinTargetId) {
+      scores[id] = 0;
+      breakdowns[id] = `Score stolen by ${nameOf(penguinId!)} - Score is 0.`;
       continue;
     }
-    scores[id] = baseScoreFor(id);
+    if (pieceId === 'cat' || pieceId === 'iron' || pieceId === 'thimble') {
+      scores[id] = 0; // filled in below
+      continue;
+    }
+    const { score, breakdown } = baseScoreFor(id);
+    scores[id] = score;
+    breakdowns[id] = breakdown;
   }
 
   if (penguinId) {
-    scores[penguinId] = penguinTargetId ? baseScoreFor(penguinTargetId) : 0;
+    if (penguinTargetId) {
+      const { score, breakdown } = baseScoreFor(penguinTargetId);
+      scores[penguinId] = score;
+      breakdowns[penguinId] = `Stole ${nameOf(penguinTargetId)}'s Score: ${breakdown}`;
+    } else {
+      scores[penguinId] = 0;
+      breakdowns[penguinId] = 'No target chosen - Score is 0.';
+    }
   }
 
   const ironId = findByPiece('iron');
@@ -277,20 +330,31 @@ function computeEndgameScores(state: GameState): GameState {
     const targetId = targets[ironId];
     if (targetId && activeIds.includes(targetId) && targetId !== ironId) {
       scores[targetId] = roubles[ironId];
+      breakdowns[targetId] = `Given ${nameOf(ironId)}'s cash: ₽${roubles[ironId]}.`;
       scores[ironId] = Math.floor(roubles[ironId] / 2);
+      breakdowns[ironId] = `₽${roubles[ironId]} cash ÷ 2 = ${scores[ironId]}`;
     } else {
       scores[ironId] = 0;
+      breakdowns[ironId] = 'No target chosen - Score is 0.';
     }
   }
   const thimbleId = findByPiece('thimble');
   if (thimbleId) {
     const targetId = targets[thimbleId];
     if (targetId && activeIds.includes(targetId) && targetId !== thimbleId) {
-      const targetScore = (scores[targetId] ?? 0) - roubles[thimbleId];
+      const targetScoreBefore = scores[targetId] ?? 0;
+      const targetScore = targetScoreBefore - roubles[thimbleId];
       scores[targetId] = targetScore;
+      breakdowns[targetId] =
+        `${targetScoreBefore} Score − ₽${roubles[thimbleId]} (${nameOf(thimbleId)}'s cash) = ${targetScore}`;
       scores[thimbleId] = targetScore < 0 ? -targetScore : 0;
+      breakdowns[thimbleId] =
+        targetScore < 0
+          ? `${nameOf(targetId)}'s Score went negative (${targetScore}) - Score is ${-targetScore}.`
+          : `${nameOf(targetId)}'s Score stayed at or above 0 - Score is 0.`;
     } else {
       scores[thimbleId] = 0;
+      breakdowns[thimbleId] = 'No target chosen - Score is 0.';
     }
   }
 
@@ -298,21 +362,34 @@ function computeEndgameScores(state: GameState): GameState {
   // broken by turn order for two players sharing a tile).
   const catId = findByPiece('cat');
   let finalScores = scores;
+  let finalBreakdowns = breakdowns;
   if (catId) {
     finalScores = { ...scores, [catId]: 0 };
+    finalBreakdowns = { ...breakdowns, [catId]: 'Always 0.' };
     const ring = [...activeIds].sort((a, b) => {
       const posDiff = state.players[a].position - state.players[b].position;
       return posDiff !== 0 ? posDiff : state.turnOrder.indexOf(a) - state.turnOrder.indexOf(b);
     });
     const rotated: Record<string, number> = {};
+    const rotatedBreakdowns: Record<string, string> = {};
     for (let i = 0; i < ring.length; i++) {
-      rotated[ring[(i + 1) % ring.length]] = finalScores[ring[i]] ?? 0;
+      const from = ring[i];
+      const to = ring[(i + 1) % ring.length];
+      rotated[to] = finalScores[from] ?? 0;
+      rotatedBreakdowns[to] =
+        from === catId
+          ? `${nameOf(catId)}'s Score (always 0) rotated to you.`
+          : `${nameOf(from)}'s Score rotated to you: ${finalBreakdowns[from] ?? finalScores[from] ?? 0}`;
     }
     finalScores = rotated;
+    finalBreakdowns = rotatedBreakdowns;
   }
 
   return logEvent(
-    { ...state, endgame: { ...state.endgame, pendingTargetChoices: [], results: finalScores } },
+    {
+      ...state,
+      endgame: { ...state.endgame, pendingTargetChoices: [], results: finalScores, scoreBreakdowns: finalBreakdowns },
+    },
     'Endgame! Final Scores are in.',
   );
 }
@@ -449,18 +526,11 @@ function logEvent(state: GameState, message: string): GameState {
   return { ...state, log: [...state.log, message].slice(-20) };
 }
 
-// engine.ts only knows player UUIDs, not their chosen display names (those
-// live on the separate Room document) - so log messages that need to name a
-// player use their Piece's name instead, same as chooseNewPiece already does.
-function pieceNameOf(state: GameState, playerId: string): string {
-  const pieceId = state.players[playerId]?.pieceId;
-  return STARTING_PIECES.find((p) => p.id === pieceId)?.name ?? pieceId ?? playerId;
-}
-
 function sendToJail(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
   return {
     ...state,
+    lastJailRedirect: { playerId, fromTileId: player.position },
     players: {
       ...state.players,
       [playerId]: { ...player, position: JAIL_POSITION, inJail: true },
@@ -1376,10 +1446,12 @@ function resolveLanding(
                 next,
                 `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is ${owner.inJail ? 'in jail' : 'blacklisted'}).`,
               )
-            : logEvent(
-                giveRoubles(next, ownerId, rent),
-                `Paid ${rent} roubles rent on ${tile.name} to ${pieceNameOf(state, ownerId)}.`,
-              );
+            : // Embeds the raw owner UUID rather than a name - engine.ts
+              // only knows player IDs, not display names (those live on
+              // the separate Room document). GameBoard's log renderer
+              // substitutes it for the owner's actual name at display
+              // time (see formatLogEntry).
+              logEvent(giveRoubles(next, ownerId, rent), `Paid ${rent} roubles rent on ${tile.name} to ${ownerId}.`);
       }
 
       return actingPieceId === 'penguin' ? openSmuggleDecision(result, playerId) : result;
@@ -2268,6 +2340,7 @@ export function endTurn(state: GameState): GameState {
     ...next,
     lastRoll: null,
     lastRollWasDoubles: false,
+    lastJailRedirect: null,
   };
 }
 

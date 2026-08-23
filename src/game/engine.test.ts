@@ -2772,6 +2772,7 @@ function triggerEndgame(state: GameState, lastRemainingPlayerId: string): GameSt
     pendingTargetChoices: [],
     targetChoices: {},
     results: null,
+    scoreBreakdowns: null,
   };
   return { ...state, endgame };
 }
@@ -2815,7 +2816,7 @@ describe('Endgame trigger (the Piece Pool running dry)', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
-      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null },
+      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null, scoreBreakdowns: null },
     };
 
     state = endTurn(state); // p1's turn ends
@@ -2831,7 +2832,7 @@ describe('Endgame trigger (the Piece Pool running dry)', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
-      endgame: { finalLapRemaining: [], pendingTargetChoices: [], targetChoices: {}, results: { p1: 10, p2: 5 } },
+      endgame: { finalLapRemaining: [], pendingTargetChoices: [], targetChoices: {}, results: { p1: 10, p2: 5 }, scoreBreakdowns: null },
     };
 
     expect(rollDice(state)).toBe(state);
@@ -2842,7 +2843,7 @@ describe('Endgame trigger (the Piece Pool running dry)', () => {
     state = {
       ...state,
       retiredPieceIds: ['car', 'iron', 'thimble', 'dog', 'wheelBarrel', 'hat', 'penguin', 'cat', 'rubberDuck', 'trex'],
-      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null },
+      endgame: { finalLapRemaining: ['p1', 'p2'], pendingTargetChoices: [], targetChoices: {}, results: null, scoreBreakdowns: null },
     };
     state = devSetForcedCard(state, 'accident');
     state = withPosition(state, 'p1', 0);
@@ -3127,6 +3128,31 @@ describe('Endgame Win Condition scoring', () => {
     expect(state.endgame?.results?.p1).toBe(50); // received from p2
     expect(state.endgame?.results?.p2).toBe(10); // received from p3 (wraps around)
     expect(state.endgame?.results?.p3).toBe(0); // received from p1 (Cat's own 0)
+    // The breakdown text rotates along with the score itself - whoever
+    // receives Cat's own 0 gets told that, not "Always 0" themselves.
+    expect(state.endgame?.scoreBreakdowns?.p3).toContain('always 0');
+    expect(state.endgame?.scoreBreakdowns?.p1).toContain('rotated to you');
+  });
+
+  it('scoreBreakdowns records the actual numbers behind each Score, not just the final total', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' as const },
+      { playerId: 'p2', pieceId: 'dog' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 300, ownedTileIds: [1, 3] }, // 300*2/3 = 200
+        p2: { ...state.players.p2, westRoubles: 100 }, // 100/2 = 50
+      },
+    };
+    state = endTurn(triggerEndgame(state, 'p1'));
+
+    expect(state.endgame?.results?.p1).toBe(200);
+    expect(state.endgame?.scoreBreakdowns?.p1).toBe('₽300 cash × 2 properties ÷ (2 players + 1) = 200');
+    expect(state.endgame?.results?.p2).toBe(50);
+    expect(state.endgame?.scoreBreakdowns?.p2).toBe('₽100 in the West ÷ 2 = 50');
   });
 
   it('permanently spectating players score nothing and cannot be chosen as a target', () => {
@@ -3318,7 +3344,7 @@ describe('Dev Panel: kick a player', () => {
     ]);
     state = {
       ...state,
-      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null },
+      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null, scoreBreakdowns: null },
     };
 
     state = devKickPlayer(state, 'p1');
@@ -3395,7 +3421,7 @@ describe('AFK handling (useAfkSelfCheck / useHostAfkWatchdog)', () => {
     state = {
       ...state,
       players: { ...state.players, p1: { ...state.players.p1, consecutiveAfkSkips: 3 } },
-      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null },
+      endgame: { finalLapRemaining: [], pendingTargetChoices: ['p1'], targetChoices: {}, results: null, scoreBreakdowns: null },
     };
 
     state = afkSkipTurn(state);

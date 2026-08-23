@@ -595,8 +595,11 @@
   position: absolute;
   /* --popup-translate-x defaults to centered (-50%); Board.tsx
      overrides it for left/right-column tiles so the popup grows
-     inward from the tile's edge instead of hanging off the screen. */
-  transform: translate(var(--popup-translate-x, -50%), -160%);
+     inward from the tile's edge instead of hanging off the screen.
+     --popup-translate-y defaults to growing upward off the tile;
+     Board.tsx overrides it for top-row tiles (nothing above them to
+     grow into without clipping the viewport) to grow downward instead. */
+  transform: translate(var(--popup-translate-x, -50%), var(--popup-translate-y, -160%));
   z-index: 15;
   cursor: default;
   font-family: var(--font-mono);

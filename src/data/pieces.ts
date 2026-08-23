@@ -97,7 +97,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
       'After reading a drawn Communist Test/No Chance card, choose to keep it or hand its entire effect to another player instead.',
     winConditionDescription:
       "You've been captured. Your Score is calculated last. Your Score is 0, but then everyone moves their Score around clockwise by one place.",
-    winConditionSummary: "Always zero, and everyone else's Score shifts one seat clockwise.",
+    winConditionSummary: "Not your own Score - you inherit whoever's clockwise from you on the board.",
   },
   {
     id: 'rubberDuck',

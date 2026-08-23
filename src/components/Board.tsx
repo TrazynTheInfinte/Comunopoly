@@ -125,13 +125,23 @@ function BoardPopup({
     side === 'left' ? (col / 11) * 100 : side === 'right' ? ((col - 1) / 11) * 100 : ((col - 0.5) / 11) * 100;
   const translateX = side === 'left' ? '8px' : side === 'right' ? 'calc(-100% - 8px)' : '-50%';
 
+  // Growing upward from a top-row tile (the default - see
+  // --popup-translate-y below) pushes the popup above the board entirely,
+  // clipped by the viewport - there's nothing above row 1 to grow into.
+  // Anchor those to the tile's bottom edge and grow downward instead, on
+  // both desktop and mobile.
+  const isTopRow = row === 1;
+  const topPercent = isTopRow ? (row / 11) * 100 : ((row - 0.5) / 11) * 100;
+  const translateY = isTopRow ? '12px' : '-160%';
+
   return (
     <div
       className="board-popup"
       style={{
-        top: `${((row - 0.5) / 11) * 100}%`,
+        top: `${topPercent}%`,
         left: `${leftPercent}%`,
         '--popup-translate-x': translateX,
+        '--popup-translate-y': translateY,
       } as CSSProperties}
       onClick={(event) => {
         event.stopPropagation();

@@ -277,6 +277,17 @@ export interface GameState {
   log: string[];
   /** House rule, set once at room creation (see Room.carryWestOnDisappear): when true, Disappearing keeps a player's West stash instead of zeroing it along with everything else. */
   carryWestOnDisappear: boolean;
+  /**
+   * Set by sendToJail to the tile the player was actually standing on
+   * the instant they got redirected to jail - e.g. the Go To Jail tile
+   * itself after a normal move landed them there, or wherever they
+   * already were for a redirect with no preceding move (three doubles
+   * in a row). Purely a UI hint for useStagedGame, which uses it to
+   * animate the walk to that tile before revealing the jump to jail,
+   * rather than snapping straight there - not read anywhere in engine.ts
+   * itself. Cleared once the turn actually ends.
+   */
+  lastJailRedirect: { playerId: string; fromTileId: number } | null;
 }
 
 export interface ShowTrialVote {
@@ -295,4 +306,6 @@ export interface EndgameState {
   targetChoices: Record<string, string>;
   /** Final computed Scores once every needed target choice is in, keyed by player ID. Null until then - its presence is what actually ends the game (see GameBoard/EndgameResultsScreen). */
   results: Record<string, number> | null;
+  /** The actual numbers plugged into each player's Score formula (e.g. "₽1,200 cash × 3 properties ÷ 5 = 720"), keyed the same as results - computed alongside it, since some of those numbers (T-Rex's redistributed cash, another player's Score before Iron/Thimble/Penguin/Cat touched it) aren't otherwise reconstructable from the final GameState alone. Null until results is. */
+  scoreBreakdowns: Record<string, string> | null;
 }

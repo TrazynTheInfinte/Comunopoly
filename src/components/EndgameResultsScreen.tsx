@@ -31,11 +31,13 @@ function EndgameResultsScreen({ room, game, roomCode, playerId, onLeave }: Endga
   }, []);
 
   const results = game.endgame?.results;
+  const breakdowns = game.endgame?.scoreBreakdowns;
   // Which ranked entries have been clicked to reveal the literal Score
-  // formula, in place of the plain-English summary shown by default -
-  // players wanted to know what actually drove the number up first,
-  // and could dig into the exact (often deliberately wordy/in-fiction)
-  // wording after, rather than the other way around.
+  // formula and the actual numbers plugged into it, in place of the
+  // plain-English summary shown by default - players wanted to know
+  // what actually drove the number up first, and could dig into the
+  // exact (often deliberately wordy/in-fiction) wording and math after,
+  // rather than the other way around.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   if (!results) return null;
@@ -88,6 +90,9 @@ function EndgameResultsScreen({ room, game, roomCode, playerId, onLeave }: Endga
                 <p className="endgame-score-explainer">
                   {isExpanded ? piece.winConditionDescription : piece.winConditionSummary}
                 </p>
+              )}
+              {isExpanded && breakdowns?.[id] && (
+                <p className="endgame-score-math">{breakdowns[id]}</p>
               )}
             </li>
           );

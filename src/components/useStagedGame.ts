@@ -70,19 +70,23 @@ export function useStagedGame(liveGame: GameState | undefined): GameState | unde
     // normally - but that redirect is baked into the same Firestore
     // write as the move itself, so comparing raw start/end position
     // alone sees one big jump straight to jail and (wrongly) snaps
-    // instead of walking. Three-doubles-in-a-row jails you with no
-    // move at all, so it's excluded here and left as a snap.
+    // instead of walking. sendToJail (engine.ts) records exactly which
+    // tile the mover was actually standing on the instant it redirected
+    // them - lastJailRedirect - so this walks there first rather than
+    // trying to reverse-engineer it from the roll. Three-doubles-in-a-
+    // row jails you with no preceding move, so that tile is just
+    // wherever they already were - a 0-distance "walk," which the
+    // distance===0 check below already treats as an immediate reveal.
     const justJailed = mover.inJail && !prevLive.players[moverId].inJail;
-    const isRoller = moverId === liveGame.turnOrder[liveGame.currentTurnIndex];
-    const tripleDoublesToJail = liveGame.log[liveGame.log.length - 1]?.endsWith('times - sent to jail!') ?? false;
-    const rollSteps =
-      justJailed && isRoller && !tripleDoublesToJail && liveGame.lastRoll
-        ? liveGame.lastRoll[0] + liveGame.lastRoll[1]
-        : 0;
-    const isJailRedirect = rollSteps > 0 && rollSteps <= MAX_ANIMATED_STEPS;
+    const redirect = liveGame.lastJailRedirect;
+    const jailRedirectFromTileId =
+      justJailed && redirect && redirect.playerId === moverId ? redirect.fromTileId : null;
+    const isJailRedirect = jailRedirectFromTileId !== null;
 
     const distance = isJailRedirect
-      ? rollSteps
+      ? backward
+        ? (prevPosition - jailRedirectFromTileId + BOARD_SIZE) % BOARD_SIZE
+        : (jailRedirectFromTileId - prevPosition + BOARD_SIZE) % BOARD_SIZE
       : backward
         ? (prevPosition - mover.position + BOARD_SIZE) % BOARD_SIZE
         : (mover.position - prevPosition + BOARD_SIZE) % BOARD_SIZE;

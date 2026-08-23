@@ -79,6 +79,14 @@
   opacity: 0.85;
 }
 
+.endgame-score-math {
+  margin: 0;
+  text-transform: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
 .endgame-spectators {
   font-size: 0.8rem;
   color: var(--color-grey);
