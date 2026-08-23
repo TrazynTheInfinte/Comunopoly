@@ -19,22 +19,6 @@
   text-align: center;
 }
 
-/* Banners in across the screen from the left, once, at the start of
-   your own turn - keyed by currentTurnPlayerId in GameBoard.tsx so it
-   replays every time it becomes your turn again, not just the first. */
-.turn-indicator.is-my-turn {
-  animation: turn-banner-slide-in 0.6s cubic-bezier(0.2, 0.8, 0.3, 1);
-}
-
-@keyframes turn-banner-slide-in {
-  from {
-    transform: translateX(-110vw);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
 @media (max-width: 900px) {
   .turn-indicator {
     /* Clears the fixed Sound toggle in the top-left corner - on mobile

@@ -35,6 +35,7 @@ import PieceInfoPanel from './PieceInfoPanel';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import YourTurnBanner from './YourTurnBanner';
 import { useAfkSelfCheck } from './useAfkSelfCheck';
 import { useCardFlight } from './useCardFlight';
 import { useGameMusic } from './useGameMusic';
@@ -192,10 +193,9 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
 
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
-      <p
-        key={currentTurnPlayerId}
-        className={`turn-indicator ${isMyTurn ? 'is-my-turn' : ''}`}
-      >
+      {isMyTurn && <YourTurnBanner key={currentTurnPlayerId} />}
+
+      <p className="turn-indicator">
         {isMyTurn ? 'Your turn' : `${room.players[currentTurnPlayerId]?.name}'s turn`}
       </p>
 

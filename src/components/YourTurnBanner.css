@@ -1,0 +1,47 @@
+/* Full-width fixed track the banner sweeps through - pointer-events
+   none so it never blocks a click on the board/dice underneath while
+   it's crossing. */
+.your-turn-banner-track {
+  position: fixed;
+  top: 12%;
+  left: 0;
+  width: 100%;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.your-turn-banner {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6em 0;
+  background: var(--color-red);
+  color: var(--color-paper);
+  border-top: 3px solid var(--color-black);
+  border-bottom: 3px solid var(--color-black);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 2rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 4px 0 rgba(17, 17, 17, 0.3);
+  animation: your-turn-banner-sweep 2.2s cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+@keyframes your-turn-banner-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 900px) {
+  .your-turn-banner {
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
+  }
+}
