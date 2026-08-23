@@ -30,7 +30,7 @@
   /* Quick slide in, a long hold fully on-screen, then a quick slide
      out - not a constant-speed sweep clear across, which didn't leave
      enough time to actually read it. Same shape as NowPlayingBanner. */
-  animation: your-turn-banner-sweep 4.8s ease-in-out;
+  animation: your-turn-banner-sweep 2.4s ease-in-out;
 }
 
 @keyframes your-turn-banner-sweep {
