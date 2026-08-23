@@ -275,6 +275,8 @@ export interface GameState {
   endgame: EndgameState | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
+  /** How many turns have actually passed to a new player so far (doubles-continuations don't count - see endTurn) - starts at 0. Purely a UI hook (currently: which fake propaganda ad to show, rotating by turnCount % list length, synced for every viewer since it's derived from GameState) - not read anywhere else in engine.ts. */
+  turnCount: number;
   /** House rule, set once at room creation (see Room.carryWestOnDisappear): when true, Disappearing keeps a player's West stash instead of zeroing it along with everything else. */
   carryWestOnDisappear: boolean;
   /**

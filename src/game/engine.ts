@@ -112,6 +112,7 @@ export function createInitialGameState(
     carryWestOnDisappear,
     lastJailRedirect: null,
     lastDisappearedPlayerId: null,
+    turnCount: 0,
   };
 
   // Degenerate edge case: a full 12-player room claims every Piece right
@@ -2359,6 +2360,7 @@ export function endTurn(state: GameState): GameState {
     lastRollWasDoubles: false,
     lastJailRedirect: null,
     lastDisappearedPlayerId: null,
+    turnCount: next.turnCount + 1,
   };
 }
 

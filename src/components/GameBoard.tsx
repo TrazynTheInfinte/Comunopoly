@@ -32,6 +32,7 @@ import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
 import PieceChoicePrompt from './PieceChoicePrompt';
 import PieceInfoPanel from './PieceInfoPanel';
+import PropagandaAd from './PropagandaAd';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
@@ -493,11 +494,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
           {isDesktop ? (
             <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
           ) : (
-            <img
-              className="propaganda-banner"
-              src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
-              alt="Capitalism has no future. Fight for communism."
-            />
+            <PropagandaAd turnCount={game.turnCount} />
           )}
 
           {isDevPanelUnlocked && <DevPanel room={room} roomCode={roomCode} game={game} />}
@@ -512,11 +509,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               instant a roll happens, not wait for the token's walk to
               finish revealing everything else. */}
           {isDesktop ? (
-            <img
-              className="propaganda-banner"
-              src={`${import.meta.env.BASE_URL}images/communist-banner.jpg`}
-              alt="Capitalism has no future. Fight for communism."
-            />
+            <PropagandaAd turnCount={game.turnCount} />
           ) : (
             <DiceRoller game={room.game ?? game} rollTrigger={rollTrigger} />
           )}

@@ -117,6 +117,25 @@ describe('rollDice', () => {
     expect(state.currentTurnIndex).toBe(0); // still p1's turn
   });
 
+  it('turnCount only increments when the turn actually passes to someone else, not on a doubles continuation', () => {
+    let state = createInitialGameState(PLAYERS);
+    expect(state.turnCount).toBe(0);
+
+    state = devSetForcedRoll(state, [4, 4]); // doubles - same player goes again
+    state = rollDice(state);
+    state = skipPurchase(state); // lands on an unowned property (tile 8) - clear the prompt first
+    state = endTurn(state);
+    expect(state.currentTurnIndex).toBe(0); // still p1's turn
+    expect(state.turnCount).toBe(0); // no real turn change yet
+
+    state = devSetForcedRoll(state, [2, 3]); // non-double - turn actually passes
+    state = rollDice(state);
+    state = skipPurchase(state); // lands on tile 13, also unowned - clear that prompt too
+    state = endTurn(state);
+    expect(state.currentTurnIndex).toBe(1); // now p2's turn
+    expect(state.turnCount).toBe(1);
+  });
+
   it('lands on an unowned property and opens a purchase decision instead of buying automatically', () => {
     let state = createInitialGameState(PLAYERS);
     state = devSetForcedRoll(state, [3, 3]); // 0 + 6 -> Moscow Metro (tile 6, property)
