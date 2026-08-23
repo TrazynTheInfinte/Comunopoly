@@ -30,14 +30,23 @@
   text-align: center;
   white-space: nowrap;
   box-shadow: 0 -4px 0 rgba(17, 17, 17, 0.3);
-  animation: now-playing-banner-sweep 3.4s linear;
+  /* Quick slide in, a long hold fully on-screen (actually readable),
+     then a quick slide out - not a constant-speed sweep all the way
+     across, which was too fast to read the track name during. */
+  animation: now-playing-banner-sweep 4.8s ease-in-out;
 }
 
 @keyframes now-playing-banner-sweep {
-  from {
+  0% {
     transform: translateX(-100%);
   }
-  to {
+  8% {
+    transform: translateX(0);
+  }
+  92% {
+    transform: translateX(0);
+  }
+  100% {
     transform: translateX(100%);
   }
 }
