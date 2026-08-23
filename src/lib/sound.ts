@@ -33,7 +33,10 @@ export function setMusicVolume(value: number): void {
   musicVolume = clamp01(value);
   localStorage.setItem(MUSIC_VOLUME_STORAGE_KEY, String(musicVolume));
   if (musicGain) musicGain.gain.value = MAX_MENU_MUSIC_GAIN * musicVolume;
-  if (gameMusicEl) gameMusicEl.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
+  // Only the active element, not whichever's mid-fade-out on its way to
+  // silence - touching that one would undo the fade.
+  const el = activeGameMusicEl();
+  if (el && !muted) el.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
 }
 
 function ensureContext(): AudioContext | null {
@@ -94,7 +97,8 @@ export function setMuted(value: boolean): void {
 
   if (value) {
     stopMenuMusic();
-    gameMusicEl?.pause();
+    gameMusicElA?.pause();
+    gameMusicElB?.pause();
     return;
   }
 
@@ -105,8 +109,10 @@ export function setMuted(value: boolean): void {
   // falling back to menu music. Resumes the same paused track rather
   // than picking a new one, same as hitting "play" again on any paused
   // <audio> element.
-  if (gameMusicMode && gameMusicEl) {
-    gameMusicEl.play().catch(() => {});
+  const el = activeGameMusicEl();
+  if (gameMusicMode && el) {
+    el.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
+    el.play().catch(() => {});
   } else {
     startMenuMusic();
   }
@@ -363,123 +369,218 @@ export function stopMenuMusic(): void {
 // Two pools of real audio files (public/audio/), supplied rather than
 // synthesized: "standard" tracks shuffle continuously during normal
 // play, same idea as the menu's procedural loop; once the Endgame's
-// final lap starts, one "final" track is chosen at random and just
-// loops for the rest of the match instead of continuing to shuffle.
-// Plain <audio> elements rather than the Web Audio graph above - these
-// are multi-minute files, and <audio> streams them instead of decoding
-// the whole thing into memory up front the way Web Audio's
-// decodeAudioData would.
+// final lap starts, one "final" (LMS - Last Man Standing) track is
+// chosen at random and just loops for the rest of the match instead
+// of continuing to shuffle. Plain <audio> elements rather than the Web
+// Audio graph above - these are multi-minute files, and <audio>
+// streams them instead of decoding the whole thing into memory up
+// front the way Web Audio's decodeAudioData would.
+//
+// Two elements (not one) so a transition can be a real crossfade: the
+// incoming track fades in on whichever element is currently idle while
+// the outgoing one fades out on the other, instead of a hard src swap.
 
-// Exposed (as name/url pairs) for the Dev Panel's track switcher -
-// everything else in this module just picks from these by index.
-export const STANDARD_TRACKS = ['standard-1.mp3', 'standard-2.mp3', 'standard-3.mp3'].map((name) => ({
+// Exposed (as name/url pairs) for the Dev Panel's track switcher and
+// the "now playing" banner - everything else in this module just
+// picks from these by index.
+const STANDARD_FILES = [
+  { name: 'House Edge', file: 'standard-house-edge.mp3' },
+  { name: 'House of Black Dice', file: 'standard-house-of-black-dice.mp3' },
+  { name: 'House of Chips', file: 'standard-house-of-chips.mp3' },
+  { name: 'The Hollow Between', file: 'standard-hollow-between.mp3' },
+  { name: 'The Hollow Between (Variation)', file: 'standard-hollow-between-variation.mp3' },
+];
+const FINAL_FILES = [
+  { name: 'Foundry of Ash', file: 'lms-foundry-of-ash.mp3' },
+  { name: 'Ritual of the Rumble', file: 'lms-ritual-of-the-rumble.mp3' },
+  { name: 'Warzone Pulse', file: 'lms-warzone-pulse.mp3' },
+  { name: 'Warzone Pulse (Variation)', file: 'lms-warzone-pulse-variation.mp3' },
+  { name: 'Warzone Riffline', file: 'lms-warzone-riffline.mp3' },
+];
+export const STANDARD_TRACKS = STANDARD_FILES.map(({ name, file }) => ({
   name,
-  url: `${import.meta.env.BASE_URL}audio/${name}`,
+  url: `${import.meta.env.BASE_URL}audio/${file}`,
 }));
-export const FINAL_TRACKS = ['final-1.mp3', 'final-2.mp3', 'final-3.mp3'].map((name) => ({
+export const FINAL_TRACKS = FINAL_FILES.map(({ name, file }) => ({
   name,
-  url: `${import.meta.env.BASE_URL}audio/${name}`,
+  url: `${import.meta.env.BASE_URL}audio/${file}`,
 }));
-const STANDARD_TRACK_URLS = STANDARD_TRACKS.map((t) => t.url);
-const FINAL_TRACK_URLS = FINAL_TRACKS.map((t) => t.url);
 
-let gameMusicEl: HTMLAudioElement | null = null;
+const CROSSFADE_MS = 1800;
+
+let gameMusicElA: HTMLAudioElement | null = null;
+let gameMusicElB: HTMLAudioElement | null = null;
+let activeSlot: 'A' | 'B' = 'A';
 let gameMusicMode: 'standard' | 'final' | null = null;
-let lastStandardTrackUrl: string | null = null;
+let lastStandardTrackIndex: number | null = null;
 
-function ensureGameMusicElement(): HTMLAudioElement | null {
-  if (typeof Audio === 'undefined') return null;
-  if (!gameMusicEl) {
-    gameMusicEl = new Audio();
-    gameMusicEl.volume = MAX_GAME_MUSIC_VOLUME * musicVolume;
-  }
-  return gameMusicEl;
+function activeGameMusicEl(): HTMLAudioElement | null {
+  return activeSlot === 'A' ? gameMusicElA : gameMusicElB;
 }
 
-/** Plays (if not muted - but always picks/sets up the track either way, so unmuting later resumes correctly) a new random standard track, avoiding an immediate repeat. */
-function playStandardTrack(): void {
-  const el = ensureGameMusicElement();
-  if (!el) return;
-  let url = STANDARD_TRACK_URLS[Math.floor(Math.random() * STANDARD_TRACK_URLS.length)];
-  if (STANDARD_TRACK_URLS.length > 1 && url === lastStandardTrackUrl) {
-    const currentIndex = STANDARD_TRACK_URLS.indexOf(url);
-    url = STANDARD_TRACK_URLS[(currentIndex + 1) % STANDARD_TRACK_URLS.length];
+function inactiveGameMusicEl(): HTMLAudioElement | null {
+  return activeSlot === 'A' ? gameMusicElB : gameMusicElA;
+}
+
+function ensureGameMusicElements(): boolean {
+  if (typeof Audio === 'undefined') return false;
+  if (!gameMusicElA) {
+    gameMusicElA = new Audio();
+    gameMusicElA.volume = 0;
   }
-  lastStandardTrackUrl = url;
-  el.loop = false;
-  el.src = url;
-  if (muted) return;
-  el.play().catch(() => {
-    // Refused (no gesture yet, still loading, etc.) - harmless, whatever
-    // triggers next (a click, the next call) will retry.
+  if (!gameMusicElB) {
+    gameMusicElB = new Audio();
+    gameMusicElB.volume = 0;
+  }
+  return true;
+}
+
+/** Ramps one element's volume toward `to` over `durationMs`, in small steps rather than jumping straight there - the actual "fade" in a crossfade. */
+function fadeVolume(el: HTMLAudioElement, to: number, durationMs: number, onDone?: () => void): void {
+  const from = el.volume;
+  const stepMs = 40;
+  const steps = Math.max(1, Math.round(durationMs / stepMs));
+  let step = 0;
+  const timer = setInterval(() => {
+    step++;
+    const t = Math.min(1, step / steps);
+    el.volume = Math.max(0, Math.min(1, from + (to - from) * t));
+    if (t >= 1) {
+      clearInterval(timer);
+      onDone?.();
+    }
+  }, stepMs);
+}
+
+// Which in-game track is playing right now, and who's watching for it
+// to change - drives the "now playing" banner (see useCurrentGameTrackName/
+// NowPlayingBanner). Purely a UI hook; nothing in this module reads it.
+let currentGameTrackName: string | null = null;
+const gameTrackListeners = new Set<(name: string | null) => void>();
+
+export function getCurrentGameTrackName(): string | null {
+  return currentGameTrackName;
+}
+
+/** Subscribes to in-game track changes - returns an unsubscribe function. */
+export function onGameTrackChange(listener: (name: string | null) => void): () => void {
+  gameTrackListeners.add(listener);
+  return () => gameTrackListeners.delete(listener);
+}
+
+function notifyGameTrack(name: string | null): void {
+  currentGameTrackName = name;
+  gameTrackListeners.forEach((listener) => listener(name));
+}
+
+/**
+ * Crossfades from whichever track is currently active to a new one:
+ * the incoming track plays on the idle element starting from silence
+ * and ramps up, while the outgoing one ramps down and then pauses -
+ * both at once, so there's no dead air or hard cut between them. While
+ * muted, nothing's audible either way, so this just swaps the src
+ * instantly instead of animating a fade nobody can hear (and skips
+ * play() entirely, same as before, so unmuting later resumes cleanly).
+ */
+function transitionGameMusic(url: string, loop: boolean, onEnded: (() => void) | null): void {
+  if (!ensureGameMusicElements()) return;
+  const outgoing = activeGameMusicEl();
+  const incoming = inactiveGameMusicEl();
+  if (!outgoing || !incoming) return;
+  const targetVolume = MAX_GAME_MUSIC_VOLUME * musicVolume;
+
+  outgoing.onended = null;
+  incoming.loop = loop;
+  incoming.onended = onEnded;
+  incoming.src = url;
+
+  if (muted) {
+    outgoing.pause();
+    incoming.volume = 0;
+  } else {
+    incoming.volume = 0;
+    incoming.play().catch(() => {
+      // Refused (no gesture yet, still loading, etc.) - harmless, whatever
+      // triggers next (a click, the next call) will retry.
+    });
+    fadeVolume(incoming, targetVolume, CROSSFADE_MS);
+    fadeVolume(outgoing, 0, CROSSFADE_MS, () => outgoing.pause());
+  }
+
+  activeSlot = activeSlot === 'A' ? 'B' : 'A';
+}
+
+/** Picks (and crossfades to) a new random standard track, avoiding an immediate repeat. */
+function playStandardTrack(): void {
+  let index = Math.floor(Math.random() * STANDARD_TRACKS.length);
+  if (STANDARD_TRACKS.length > 1 && index === lastStandardTrackIndex) {
+    index = (index + 1) % STANDARD_TRACKS.length;
+  }
+  lastStandardTrackIndex = index;
+  const track = STANDARD_TRACKS[index];
+  transitionGameMusic(track.url, false, () => {
+    if (gameMusicMode === 'standard') playStandardTrack();
   });
+  notifyGameTrack(track.name);
 }
 
 /**
  * Shuffles continuously among the "standard" gameplay tracks - each one
  * plays once through, then a different one is picked. Call once when a
- * game actually starts. Sets up the track even while muted, so the
- * "resume where we left off" logic in setMuted has something to resume.
+ * game actually starts.
  */
 export function startGameMusic(): void {
-  const el = ensureGameMusicElement();
-  if (!el) return;
+  if (!ensureGameMusicElements()) return;
   if (gameMusicMode === 'standard') return; // already doing this
   gameMusicMode = 'standard';
-  el.onended = () => {
-    if (gameMusicMode === 'standard') playStandardTrack();
-  };
   playStandardTrack();
 }
 
-/** Switches to a single randomly-chosen "final round" track, looped for the rest of the match. Call once when the Endgame's final lap begins. */
+/** Switches to a single randomly-chosen "final round" (LMS) track, looped for the rest of the match. Call once when the Endgame's final lap begins. */
 export function startFinalRoundMusic(): void {
-  const el = ensureGameMusicElement();
-  if (!el) return;
+  if (!ensureGameMusicElements()) return;
   if (gameMusicMode === 'final') return; // already doing this
   gameMusicMode = 'final';
-  el.onended = null;
-  el.loop = true;
-  el.src = FINAL_TRACK_URLS[Math.floor(Math.random() * FINAL_TRACK_URLS.length)];
-  if (muted) return;
-  el.play().catch(() => {});
+  const track = FINAL_TRACKS[Math.floor(Math.random() * FINAL_TRACKS.length)];
+  transitionGameMusic(track.url, true, null);
+  notifyGameTrack(track.name);
 }
 
-/** Stops whichever in-game track (standard or final) is currently playing. Call when leaving a game back to the lobby/menu. */
+/** Stops whichever in-game track (standard or final) is currently playing. Call when leaving a game back to the lobby/menu. Instant, not a fade - there's nothing to crossfade into. */
 export function stopGameMusic(): void {
   gameMusicMode = null;
-  if (gameMusicEl) {
-    gameMusicEl.onended = null;
-    gameMusicEl.pause();
+  if (gameMusicElA) {
+    gameMusicElA.onended = null;
+    gameMusicElA.pause();
   }
+  if (gameMusicElB) {
+    gameMusicElB.onended = null;
+    gameMusicElB.pause();
+  }
+  notifyGameTrack(null);
 }
 
 /**
  * Dev Panel track switcher: forces a specific track to play right now,
  * bypassing the normal shuffle/pick-at-random logic - lets someone
- * preview any of the 6 without waiting for it to come up naturally.
+ * preview any of the 10 without waiting for it to come up naturally.
  * Standard tracks picked this way still auto-advance (to another
  * random standard track) when they end, same as the real thing; a
  * final track picked this way just loops, same as the real thing.
  */
 export function debugPlayGameTrack(kind: 'standard' | 'final', index: number): void {
-  const el = ensureGameMusicElement();
-  if (!el) return;
+  if (!ensureGameMusicElements()) return;
   const track = (kind === 'standard' ? STANDARD_TRACKS : FINAL_TRACKS)[index];
   if (!track) return;
 
   gameMusicMode = kind;
   if (kind === 'standard') {
-    lastStandardTrackUrl = track.url;
-    el.loop = false;
-    el.onended = () => {
+    lastStandardTrackIndex = index;
+    transitionGameMusic(track.url, false, () => {
       if (gameMusicMode === 'standard') playStandardTrack();
-    };
+    });
   } else {
-    el.loop = true;
-    el.onended = null;
+    transitionGameMusic(track.url, true, null);
   }
-  el.src = track.url;
-  if (muted) return;
-  el.play().catch(() => {});
+  notifyGameTrack(track.name);
 }

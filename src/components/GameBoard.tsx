@@ -30,6 +30,7 @@ import EndgameTargetPrompt from './EndgameTargetPrompt';
 import FlyingCard from './FlyingCard';
 import Hand from './Hand';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
+import NowPlayingBanner from './NowPlayingBanner';
 import PieceChoicePrompt from './PieceChoicePrompt';
 import PieceInfoPanel from './PieceInfoPanel';
 import PropagandaAd from './PropagandaAd';
@@ -39,6 +40,7 @@ import SmuggleOfferPrompt from './SmuggleOfferPrompt';
 import YourTurnBanner from './YourTurnBanner';
 import { useAfkSelfCheck } from './useAfkSelfCheck';
 import { useCardFlight } from './useCardFlight';
+import { useCurrentGameTrackName } from './useCurrentGameTrackName';
 import { useGameMusic } from './useGameMusic';
 import { useHostAfkWatchdog } from './useHostAfkWatchdog';
 import { useIsDesktop } from './useIsDesktop';
@@ -108,6 +110,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   // game isn't available yet.
   useSoundEvents(game?.log ?? []);
   useGameMusic(game);
+  const currentTrackName = useCurrentGameTrackName();
   // Both computed defensively here (game may still be undefined on this
   // render) so the two watchdog hooks below - which also can't be
   // called conditionally - have real values rather than needing their
@@ -195,6 +198,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
       {isMyTurn && <YourTurnBanner key={currentTurnPlayerId} />}
+      {currentTrackName && <NowPlayingBanner key={currentTrackName} trackName={currentTrackName} />}
 
       <p className="turn-indicator">
         {isMyTurn ? 'Your turn' : `${room.players[currentTurnPlayerId]?.name}'s turn`}
