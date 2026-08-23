@@ -59,8 +59,12 @@ async function writeGameState(roomCode: string, game: GameState) {
 export async function startGame(
   roomCode: string,
   playerAssignments: { playerId: string; pieceId: PieceId }[],
+  carryWestOnDisappear: boolean = false,
 ) {
-  await writeGameState(roomCode, createInitialGameState(playerAssignments));
+  await writeGameState(
+    roomCode,
+    createInitialGameState(playerAssignments, Math.random, carryWestOnDisappear),
+  );
 }
 
 /**
@@ -98,7 +102,7 @@ export async function startNewMatch(roomCode: string, room: Room) {
   }
   await updateDoc(doc(db, 'rooms', roomCode), {
     mode: 'experienced',
-    game: createInitialGameState(assignments),
+    game: createInitialGameState(assignments, Math.random, room.carryWestOnDisappear ?? false),
   });
 }
 

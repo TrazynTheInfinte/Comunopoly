@@ -9,6 +9,12 @@ const STEP_MS = 160;
 // two apart just by comparing start/end tiles, so it snaps instead of
 // animating a lap around the board.
 const MAX_ANIMATED_STEPS = 12;
+// Extra pause after a jail-redirect walk lands on the tile that actually
+// triggered it (Go To Jail, an unaffordable STOY fee, etc.) before the
+// piece is hauled off to jail - long enough to register as "you landed
+// here, and THEN got sent to jail" rather than the walk and the jail
+// snap blurring into one motion.
+const JAIL_REVEAL_DELAY_MS = 500;
 
 /**
  * Every landing (rent, cards, jail, Kremlin/NKVD visits, Chernobyl,
@@ -58,9 +64,28 @@ export function useStagedGame(liveGame: GameState | undefined): GameState | unde
     const mover = liveGame.players[moverId];
     const prevPosition = prevLive.players[moverId].position;
     const backward = mover.movingBackward;
-    const distance = backward
-      ? (prevPosition - mover.position + BOARD_SIZE) % BOARD_SIZE
-      : (mover.position - prevPosition + BOARD_SIZE) % BOARD_SIZE;
+
+    // Landing on Go To Jail, or falling short on the STOY pass fee mid-
+    // move, redirects the mover to jail *after* they've already moved
+    // normally - but that redirect is baked into the same Firestore
+    // write as the move itself, so comparing raw start/end position
+    // alone sees one big jump straight to jail and (wrongly) snaps
+    // instead of walking. Three-doubles-in-a-row jails you with no
+    // move at all, so it's excluded here and left as a snap.
+    const justJailed = mover.inJail && !prevLive.players[moverId].inJail;
+    const isRoller = moverId === liveGame.turnOrder[liveGame.currentTurnIndex];
+    const tripleDoublesToJail = liveGame.log[liveGame.log.length - 1]?.endsWith('times - sent to jail!') ?? false;
+    const rollSteps =
+      justJailed && isRoller && !tripleDoublesToJail && liveGame.lastRoll
+        ? liveGame.lastRoll[0] + liveGame.lastRoll[1]
+        : 0;
+    const isJailRedirect = rollSteps > 0 && rollSteps <= MAX_ANIMATED_STEPS;
+
+    const distance = isJailRedirect
+      ? rollSteps
+      : backward
+        ? (prevPosition - mover.position + BOARD_SIZE) % BOARD_SIZE
+        : (mover.position - prevPosition + BOARD_SIZE) % BOARD_SIZE;
 
     if (distance === 0 || distance > MAX_ANIMATED_STEPS) {
       setStaged(liveGame);
@@ -75,6 +100,23 @@ export function useStagedGame(liveGame: GameState | undefined): GameState | unde
       timersRef.current.push(
         setTimeout(() => {
           if (isLastStep) {
+            if (isJailRedirect) {
+              // Show the piece actually arriving on the tile that
+              // triggered the redirect, hold there for a beat, then
+              // reveal the jump to jail.
+              setStaged((current) => {
+                const base = current as GameState;
+                return {
+                  ...base,
+                  players: {
+                    ...base.players,
+                    [moverId]: { ...base.players[moverId], position: tileId },
+                  },
+                };
+              });
+              timersRef.current.push(setTimeout(() => setStaged(liveGame), JAIL_REVEAL_DELAY_MS));
+              return;
+            }
             // The walk is done - reveal everything else about this update now.
             setStaged(liveGame);
           } else {

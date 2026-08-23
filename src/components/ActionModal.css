@@ -1,0 +1,22 @@
+.action-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 17, 17, 0.75);
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+/* Purely a positioning/backdrop wrapper - no border/background of its
+   own, since every prompt it wraps (.purchase-prompt/.card-prompt, or
+   a prompt component's own markup) already supplies that. Keeps this
+   from double-bordering content that already looked right inline in
+   the sidebar. */
+.action-modal {
+  width: min(420px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+}

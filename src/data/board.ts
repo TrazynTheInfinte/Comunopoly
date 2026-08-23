@@ -1,5 +1,10 @@
 import type { BoardTile } from '../types/game';
 
+// Classic Monopoly railroad rent: doubles with each additional railroad
+// the same owner has. All 4 of our railroads are priced 200, same as the
+// classic board, so we can reuse this table directly.
+export const RAILROAD_RENT_BY_COUNT = [25, 50, 100, 200];
+
 // The full 40-tile board, reconstructed from the source repo's
 // boardPrintable.pdf (MaiRiosIPla/communopoly). Order goes clockwise
 // starting at STOY, matching the "collect on landing, pay 50 to pass"
@@ -9,7 +14,7 @@ import type { BoardTile } from '../types/game';
 // group for group, except the purple group (50/60 here vs 60/60 there) -
 // close enough that houses/hotels reuse classic Monopoly's real
 // houseCost/rentTable numbers directly per tile (same idea already used
-// for railroad rent - see RAILROAD_RENT_BY_COUNT in game/engine.ts).
+// for railroad rent - see RAILROAD_RENT_BY_COUNT above).
 // rentTable is [0 houses, 1, 2, 3, 4, hotel].
 export const BOARD: BoardTile[] = [
   { id: 0, kind: 'go', name: 'STOY' },

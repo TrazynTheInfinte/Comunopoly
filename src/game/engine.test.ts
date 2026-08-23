@@ -3169,6 +3169,26 @@ describe('Dev Panel: force Disappear / force Endgame', () => {
     expect(devForceDisappear(state, 'not-a-real-player')).toBe(state);
   });
 
+  it('Disappear zeroes the West stash by default', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, westRoubles: 300, pendingWestRoubles: 50 } } };
+
+    state = devForceDisappear(state, 'p1');
+
+    expect(state.players.p1.westRoubles).toBe(0);
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
+  });
+
+  it('carryWestOnDisappear keeps the West stash through a Disappear', () => {
+    let state = createInitialGameState(PLAYERS, Math.random, true);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, westRoubles: 300, pendingWestRoubles: 50 } } };
+
+    state = devForceDisappear(state, 'p1');
+
+    expect(state.players.p1.westRoubles).toBe(300);
+    expect(state.players.p1.pendingWestRoubles).toBe(50);
+  });
+
   it('devForceEndgame retires every unheld Piece and starts the final lap immediately', () => {
     let state = createInitialGameState(PLAYERS); // p1 boot, p2 battleship
 

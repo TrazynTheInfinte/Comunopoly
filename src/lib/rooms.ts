@@ -47,6 +47,7 @@ export async function createRoom(
   playerId: string,
   playerName: string,
   mode: RoomMode,
+  carryWestOnDisappear: boolean = false,
 ): Promise<string> {
   let lastError: unknown;
 
@@ -63,6 +64,7 @@ export async function createRoom(
         createdAt: serverTimestamp(),
         hostId: playerId,
         mode,
+        carryWestOnDisappear,
         players: {
           [playerId]: { name: playerName, joinedAt: serverTimestamp(), pieceId },
         },

@@ -1,4 +1,4 @@
-import { BOARD, BOARD_SIZE, getTile } from '../data/board';
+import { BOARD, BOARD_SIZE, getTile, RAILROAD_RENT_BY_COUNT } from '../data/board';
 import {
   COMMUNIST_TEST_CARDS,
   NO_CHANCE_CARDS,
@@ -13,10 +13,6 @@ const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
 const STARTING_ROUBLES = 1000;
 const STOY_LANDING_BONUS = 200;
 const STOY_PASS_FEE = 50;
-// Classic Monopoly railroad rent: doubles with each additional railroad
-// the same owner has. All 4 of our railroads are priced 200, same as the
-// classic board, so we can reuse this table directly.
-const RAILROAD_RENT_BY_COUNT = [25, 50, 100, 200];
 const JAIL_POSITION = 10;
 const JAIL_BRIBE = 100;
 const MAX_DOUBLES_BEFORE_JAIL = 3;
@@ -53,6 +49,7 @@ function ownsFullGroup(state: GameState, playerId: string, group: ColorGroup): b
 export function createInitialGameState(
   playerAssignments: { playerId: string; pieceId: PieceId }[],
   rng: () => number = Math.random,
+  carryWestOnDisappear: boolean = false,
 ): GameState {
   const players: Record<string, GamePlayerState> = {};
   for (const { playerId, pieceId } of playerAssignments) {
@@ -112,6 +109,7 @@ export function createInitialGameState(
     pendingPieceChoices: [],
     endgame: null,
     log: ['The game begins.'],
+    carryWestOnDisappear,
   };
 
   // Degenerate edge case: a full 12-player room claims every Piece right
@@ -451,6 +449,14 @@ function logEvent(state: GameState, message: string): GameState {
   return { ...state, log: [...state.log, message].slice(-20) };
 }
 
+// engine.ts only knows player UUIDs, not their chosen display names (those
+// live on the separate Room document) - so log messages that need to name a
+// player use their Piece's name instead, same as chooseNewPiece already does.
+function pieceNameOf(state: GameState, playerId: string): string {
+  const pieceId = state.players[playerId]?.pieceId;
+  return STARTING_PIECES.find((p) => p.id === pieceId)?.name ?? pieceId ?? playerId;
+}
+
 function sendToJail(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
   return {
@@ -525,8 +531,12 @@ function disappearPlayer(
         hidingPosition: null,
         heldCardIds: [],
         isTrotsky: false,
-        westRoubles: 0,
-        pendingWestRoubles: 0,
+        // House rule (Room.carryWestOnDisappear/GameState.carryWestOnDisappear):
+        // normally a Disappear seizes the West stash along with everything
+        // else, same as the rest of a player's assets - with the setting
+        // on, it's the one thing that survives into their new Piece.
+        westRoubles: state.carryWestOnDisappear ? player.westRoubles : 0,
+        pendingWestRoubles: state.carryWestOnDisappear ? player.pendingWestRoubles : 0,
         doublesRolledCount: 0,
         consecutiveAfkSkips: 0,
         isAfkSpectating: false,
@@ -1366,7 +1376,10 @@ function resolveLanding(
                 next,
                 `Paid ${rent} roubles rent on ${tile.name}, seized by the State (owner is ${owner.inJail ? 'in jail' : 'blacklisted'}).`,
               )
-            : logEvent(giveRoubles(next, ownerId, rent), `Paid ${rent} roubles rent on ${tile.name}.`);
+            : logEvent(
+                giveRoubles(next, ownerId, rent),
+                `Paid ${rent} roubles rent on ${tile.name} to ${pieceNameOf(state, ownerId)}.`,
+              );
       }
 
       return actingPieceId === 'penguin' ? openSmuggleDecision(result, playerId) : result;
@@ -1716,7 +1729,8 @@ export function buyProperty(state: GameState): GameState {
 /** The current player declines to buy - the property stays unowned. */
 export function skipPurchase(state: GameState): GameState {
   if (state.pendingDecision?.type !== 'purchase') return state;
-  return logEvent({ ...state, pendingDecision: null }, 'Declined to buy.');
+  const tile = getTile(state.pendingDecision.tileId);
+  return logEvent({ ...state, pendingDecision: null }, `Declined to buy ${tile.name}.`);
 }
 
 /** The current player gives away everything they own (split evenly among the other players) to claim The Volga. */

@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
-import { BOARD } from '../data/board';
+import { BOARD, RAILROAD_RENT_BY_COUNT } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
 import type { BoardTile, CardDeck, GameState } from '../types/game';
 import type { Room } from '../types/room';
@@ -143,6 +143,51 @@ function BoardPopup({
   );
 }
 
+const HOUSE_LABELS = ['No houses', '1 house', '2 houses', '3 houses', '4 houses', 'Hotel'];
+
+/** Rent breakdown shown in a tile's popup - the price on its own wasn't enough for players to know what landing on it actually costs. Properties get the full houses-to-hotel table; railroads get the by-count table; utilities (Chernobyl Power, The Volga) have no fixed rent, so they're left out entirely. */
+function TileRentInfo({ tile }: { tile: BoardTile }) {
+  if (tile.kind === 'property') {
+    return (
+      <>
+        <br />
+        <span className="board-popup-price">Price: ₽{tile.price}</span>
+        <table className="board-popup-rent">
+          <tbody>
+            {tile.rentTable.map((rent, index) => (
+              <tr key={index}>
+                <td>{HOUSE_LABELS[index]}</td>
+                <td>₽{rent}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>
+    );
+  }
+
+  if (tile.kind === 'railroad') {
+    return (
+      <>
+        <br />
+        <span className="board-popup-price">Price: ₽{tile.price}</span>
+        <table className="board-popup-rent">
+          <tbody>
+            {RAILROAD_RENT_BY_COUNT.map((rent, index) => (
+              <tr key={index}>
+                <td>{index + 1} owned</td>
+                <td>₽{rent}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>
+    );
+  }
+
+  return null;
+}
+
 /**
  * The actual 40-tile board, laid out as a physical Monopoly-style square
  * (not the plain text readout that's still shown below it for actions/
@@ -202,7 +247,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
         <div className="board-center-banner">COMMUNOPOLY</div>
         <button
           type="button"
-          className={`board-center-deck board-center-deck-communist ${awaitingDeck === 'communistTest' ? 'is-clickable' : ''}`}
+          className={`board-center-deck board-center-deck-communist ${awaitingDeck === 'communistTest' ? 'is-hot' : ''} ${awaitingDeck === 'communistTest' && isMyTurn ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'communistTest'}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             onDeckClick?.('communistTest', event.currentTarget.getBoundingClientRect());
@@ -214,7 +259,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
         </button>
         <button
           type="button"
-          className={`board-center-deck board-center-deck-nochance ${awaitingDeck === 'noChance' ? 'is-clickable' : ''}`}
+          className={`board-center-deck board-center-deck-nochance ${awaitingDeck === 'noChance' ? 'is-hot' : ''} ${awaitingDeck === 'noChance' && isMyTurn ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'noChance'}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             onDeckClick?.('noChance', event.currentTarget.getBoundingClientRect());
@@ -362,6 +407,10 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
       {openTileId !== null && (
         <BoardPopup tileId={openTileId} onDismiss={() => setOpenTileId(null)}>
           {BOARD.find((t) => t.id === openTileId)?.name}
+          {(() => {
+            const tile = BOARD.find((t) => t.id === openTileId);
+            return tile ? <TileRentInfo tile={tile} /> : null;
+          })()}
         </BoardPopup>
       )}
     </div>

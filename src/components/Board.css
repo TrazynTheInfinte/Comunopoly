@@ -85,16 +85,21 @@
   right: 8%;
 }
 
-/* The pile matching an awaitingCardDraw decision - click it to actually
-   draw. Everyone sees which pile is "hot," not just the current player,
-   since only their own client can actually trigger the draw (disabled
-   otherwise). */
-.board-center-deck.is-clickable {
+/* The pile matching an awaitingCardDraw decision - everyone sees which
+   pile is "hot" (border + pulse), but only the current player's own
+   client can actually trigger the draw, so only theirs also gets
+   is-clickable (pointer cursor + hover swap). Without that split, every
+   other player saw what looked like a clickable button that silently
+   did nothing when clicked. */
+.board-center-deck.is-hot {
   border-style: solid;
   border-color: var(--color-red);
   color: var(--color-red);
-  cursor: pointer;
   animation: deck-pulse 1.1s ease-in-out infinite;
+}
+
+.board-center-deck.is-clickable {
+  cursor: pointer;
 }
 
 .board-center-deck.is-clickable:hover {
@@ -604,6 +609,28 @@
   border: 2px solid var(--color-black);
   padding: 0.3em 0.6em;
   box-shadow: 2px 2px 0 rgba(17, 17, 17, 0.3);
+}
+
+.board-popup-price {
+  display: block;
+  margin-top: 0.2em;
+  font-weight: 700;
+}
+
+.board-popup-rent {
+  margin: 0.3em auto 0;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.board-popup-rent td {
+  padding: 0.05em 0.5em;
+  text-align: left;
+}
+
+.board-popup-rent td:last-child {
+  text-align: right;
+  color: var(--color-red);
 }
 
 /* Plays every time a token's displayed tile changes (see

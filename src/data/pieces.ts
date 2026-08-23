@@ -14,6 +14,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Utilities are half price.',
     winConditionDescription:
       "You're conscripted. Final score is money in hand times number of properties, divided by the number of players and the state.",
+    winConditionSummary: 'Cash on hand × properties owned, split among everyone.',
   },
   {
     id: 'battleship',
@@ -22,6 +23,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Rail stations are half price.',
     winConditionDescription:
       "You've defected. Final score is money in hand times number of houses owned.",
+    winConditionSummary: 'Cash on hand × houses owned.',
   },
   {
     id: 'car',
@@ -30,6 +32,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Can choose a card when landing on Communist Test.',
     winConditionDescription:
       "You're sidelined. Final score is money in the West times number of hotels.",
+    winConditionSummary: 'West stash × hotels owned.',
   },
   {
     id: 'iron',
@@ -38,6 +41,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Never has to pay the bribe to pass STOY.',
     winConditionDescription:
       "You're dying. Give the total money in hand as Score to another player, replacing their Score. You get half of their Score.",
+    winConditionSummary: "Hands your cash to another player's Score; you keep half of theirs.",
   },
   {
     id: 'thimble',
@@ -46,6 +50,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Only rolls 1 die.',
     winConditionDescription:
       "You've starved. Deduct the money in your hand from another player's Score. If it goes negative, your Score is the negative of theirs; otherwise your Score is zero.",
+    winConditionSummary: "Drags down another player's Score by your cash on hand.",
   },
   {
     id: 'dog',
@@ -54,6 +59,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     powerDescription: 'Can choose a card when landing on No Chance.',
     winConditionDescription:
       "You're denounced. Final score is half of your money in the West.",
+    winConditionSummary: 'Half of your West stash.',
   },
   {
     id: 'wheelBarrel',
@@ -63,6 +69,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
       'Automatically takes any purple-group property you land on - free if unowned, seized (no rent) if someone else owns it.',
     winConditionDescription:
       "You've been sent to a gulag. Final score is money in the West times number of properties.",
+    winConditionSummary: 'West stash × properties owned.',
   },
   {
     id: 'hat',
@@ -70,6 +77,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
     title: 'Nepman',
     powerDescription: 'When you complete a collection, get a free house.',
     winConditionDescription: "You're shot. You score nothing. That's your score.",
+    winConditionSummary: 'Always zero.',
   },
   {
     id: 'penguin',
@@ -79,6 +87,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
       'Can smuggle money to the West when landing on any owned property or railroad (not just Free Parking).',
     winConditionDescription:
       "You've been double-crossed. Before any scores are calculated, choose another player. You get their Score, and they get 0.",
+    winConditionSummary: "Steals another player's Score outright; they're left with 0.",
   },
   {
     id: 'cat',
@@ -88,6 +97,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
       'After reading a drawn Communist Test/No Chance card, choose to keep it or hand its entire effect to another player instead.',
     winConditionDescription:
       "You've been captured. Your Score is calculated last. Your Score is 0, but then everyone moves their Score around clockwise by one place.",
+    winConditionSummary: "Always zero, and everyone else's Score shifts one seat clockwise.",
   },
   {
     id: 'rubberDuck',
@@ -97,6 +107,7 @@ export const STARTING_PIECES: PieceDefinition[] = [
       'Any time your own move lands you on the same square as another player, you can choose to send them to jail.',
     winConditionDescription:
       "You've been forgotten. Final score is how many people you sent to jail times your number of properties.",
+    winConditionSummary: 'Players you jailed × properties owned.',
   },
   {
     id: 'trex',
@@ -110,5 +121,6 @@ export const STARTING_PIECES: PieceDefinition[] = [
       "Can't buy properties. Landing on one owned by someone else seizes it automatically (no rent paid). Chernobyl Power and The Volga still follow their own normal rules.",
     winConditionDescription:
       "You've become irrelevant to the ongoing liberation of the Global Proletariat. Your Score is calculated first: divide the money in your hand among the other players evenly (any remainder is deducted from your Score), then count your seized properties. Final score is the number of people you shared money with times that count.",
+    winConditionSummary: 'Number of players you split your cash with × properties seized.',
   },
 ];

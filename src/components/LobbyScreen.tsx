@@ -41,7 +41,7 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
     const assignments = players
       .filter(([, player]) => player.pieceId !== null)
       .map(([id, player]) => ({ playerId: id, pieceId: player.pieceId! }));
-    void startGame(roomCode, assignments);
+    void startGame(roomCode, assignments, room.carryWestOnDisappear ?? false);
   }
 
   function handleCloseLobby() {

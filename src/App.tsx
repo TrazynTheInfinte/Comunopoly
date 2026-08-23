@@ -53,6 +53,7 @@ function App() {
   });
   const [mode, setMode] = useState<Mode>('join');
   const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
+  const [carryWestOnDisappear, setCarryWestOnDisappear] = useState(false);
   const [name, setName] = useState(() => getStoredName());
   const [roomCodeInput, setRoomCodeInput] = useState(() => getRoomCodeFromUrl() ?? '');
   const [activeRoomCode, setActiveRoomCode] = useState(() => getStoredActiveRoomCode() ?? '');
@@ -93,7 +94,7 @@ function App() {
 
       const roomCode =
         mode === 'create'
-          ? await createRoom(playerId, trimmedName, roomMode)
+          ? await createRoom(playerId, trimmedName, roomMode, carryWestOnDisappear)
           : await joinRoomAndReturnCode(roomCodeInput, trimmedName);
 
       storeName(trimmedName);
@@ -206,6 +207,17 @@ function App() {
                 Beginner - everyone picks their own (without seeing its power)
               </label>
             </fieldset>
+          )}
+
+          {mode === 'create' && (
+            <label className="carry-west-toggle">
+              <input
+                type="checkbox"
+                checked={carryWestOnDisappear}
+                onChange={(event) => setCarryWestOnDisappear(event.target.checked)}
+              />
+              Keep money in the West when you Disappear (carries over to your new Piece)
+            </label>
           )}
 
           {error && <p className="error">{error}</p>}

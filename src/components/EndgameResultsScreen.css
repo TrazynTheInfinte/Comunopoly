@@ -30,8 +30,8 @@
 
 .endgame-ranking li {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.3em;
   border: 2px solid var(--color-black);
   background: var(--color-grey-light);
   padding: 0.6em 0.9em;
@@ -45,6 +45,12 @@
   border-color: var(--color-red);
 }
 
+.endgame-ranking-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .endgame-rank {
   font-family: var(--font-display);
   font-weight: 800;
@@ -54,8 +60,23 @@
   flex: 1;
 }
 
+/* A button, not a plain span - click it to swap the plain-English
+   summary below for the literal, in-fiction Score formula (see
+   endgame-score-explainer). */
 .endgame-score {
+  all: unset;
   font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+}
+
+.endgame-score-explainer {
+  margin: 0;
+  text-transform: none;
+  font-size: 0.75rem;
+  font-weight: 400;
+  opacity: 0.85;
 }
 
 .endgame-spectators {

@@ -27,6 +27,8 @@ export interface Room {
   hostId: string;
   mode: RoomMode;
   players: Record<string, RoomPlayer>;
+  /** Set once by the host at room creation. When true, Disappearing keeps the player's West stash (money smuggled to the West) instead of zeroing it along with everything else - see disappearPlayer in game/engine.ts. Absent (falsy) means the normal rules: a Disappear always fully seizes the West stash too. */
+  carryWestOnDisappear?: boolean;
   /** Absent while the room is still in its lobby; present once the host starts the game. */
   game?: GameState;
 }

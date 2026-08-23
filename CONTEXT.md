@@ -66,7 +66,7 @@ The phase triggered once the Piece Pool has no unclaimed Pieces left to hand out
 Moving Roubles into a player's West stash by landing on Free Parking or on a property that player owns.
 
 **The West**:
-A Piece's protected Rouble stash, seeded by Smuggling. Safe from being taken by an opponent once its owner has completed one full lap of the board since smuggling it; safe or not, it is always fully Seized if the Piece Disappears.
+A Piece's protected Rouble stash, seeded by Smuggling. Safe from being taken by an opponent once its owner has completed one full lap of the board since smuggling it; by default, safe or not, it is fully Seized if the Piece Disappears. A room-level house rule (set at room creation, "Keep money in the West when you Disappear") can override this for every Disappear in that room, letting the West stash carry over into the player's next Piece instead.
 _Avoid_: stash, savings, off-shore account
 
 **STOY**:

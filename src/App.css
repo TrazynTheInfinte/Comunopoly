@@ -96,6 +96,15 @@
   text-transform: none !important;
 }
 
+.carry-west-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5em !important;
+  font-size: 0.8rem !important;
+  text-transform: none !important;
+  text-align: left;
+}
+
 .error {
   font-family: var(--font-mono);
   font-size: 0.85rem;

@@ -17,6 +17,7 @@ import {
 import { isPlayerAway } from '../lib/presence';
 import { playCardDraw } from '../lib/sound';
 import type { Room } from '../types/room';
+import ActionModal from './ActionModal';
 import AnimatedNumber from './AnimatedNumber';
 import Board from './Board';
 import CardChoicePrompt from './CardChoicePrompt';
@@ -277,11 +278,15 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
           )}
 
           {myPendingPieceChoice && (
-            <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
+            <ActionModal>
+              <PieceChoicePrompt playerId={playerId} roomCode={roomCode} game={game} />
+            </ActionModal>
           )}
 
           {myPendingEndgameTarget && (
-            <EndgameTargetPrompt playerId={playerId} room={room} roomCode={roomCode} game={game} />
+            <ActionModal>
+              <EndgameTargetPrompt playerId={playerId} room={room} roomCode={roomCode} game={game} />
+            </ActionModal>
           )}
 
           {isMyTurn && !myPendingPieceChoice && !game.pendingDecision && (
@@ -304,76 +309,92 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
           )}
 
           {isMyTurn && pendingTile && game.pendingDecision?.type === 'purchase' && (
-            <div className="purchase-prompt">
-              <p>
-                Buy {pendingTile.name}
-                {'price' in pendingTile ? ` for ₽${pendingTile.price}` : ''}?
-              </p>
-              <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
-              <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>
-            </div>
+            <ActionModal>
+              <div className="purchase-prompt">
+                <p>
+                  Buy {pendingTile.name}
+                  {'price' in pendingTile ? ` for ₽${pendingTile.price}` : ''}?
+                </p>
+                <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
+                <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>
+              </div>
+            </ActionModal>
           )}
 
           {isMyTurn && pendingTile && game.pendingDecision?.type === 'volgaOffer' && (
-            <div className="purchase-prompt">
-              <p>
-                Give away everything you own to claim {pendingTile.name}? Your properties will be
-                split evenly among the other players.
-              </p>
-              <button onClick={() => acceptVolgaOfferAndSync(roomCode, game)}>Give It Up</button>
-              <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>Decline</button>
-            </div>
+            <ActionModal>
+              <div className="purchase-prompt">
+                <p>
+                  Give away everything you own to claim {pendingTile.name}? Your properties will be
+                  split evenly among the other players.
+                </p>
+                <button onClick={() => acceptVolgaOfferAndSync(roomCode, game)}>Give It Up</button>
+                <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>Decline</button>
+              </div>
+            </ActionModal>
           )}
 
           {pendingCard && game.pendingDecision?.type === 'cardDrawn' && (
-            <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
-              <CardRevealSound />
-              <p className="card-title">{pendingCard.title}</p>
-              <p>{pendingCard.text}</p>
-              <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
-            </div>
+            <ActionModal>
+              <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
+                <CardRevealSound />
+                <p className="card-title">{pendingCard.title}</p>
+                <p>{pendingCard.text}</p>
+                <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
+              </div>
+            </ActionModal>
           )}
 
           {isMyTurn && game.pendingDecision?.type === 'cardChoice' && (
-            <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
+            <ActionModal>
+              <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
+            </ActionModal>
           )}
 
           {isMyTurn && game.pendingDecision?.type === 'smuggleOffer' && (
-            <SmuggleOfferPrompt
-              maxAmount={game.pendingDecision.maxAmount}
-              roomCode={roomCode}
-              game={game}
-            />
+            <ActionModal>
+              <SmuggleOfferPrompt
+                maxAmount={game.pendingDecision.maxAmount}
+                roomCode={roomCode}
+                game={game}
+              />
+            </ActionModal>
           )}
 
           {isMyTurn && game.pendingDecision?.type === 'catRedirect' && (
-            <CatRedirectPrompt
-              cardId={game.pendingDecision.cardId}
-              room={room}
-              roomCode={roomCode}
-              playerId={playerId}
-              game={game}
-            />
-          )}
-
-          {game.pendingDecision?.type === 'cardTarget' &&
-            game.pendingDecision.forPlayerId === playerId && (
-              <CardTargetPrompt
+            <ActionModal>
+              <CatRedirectPrompt
                 cardId={game.pendingDecision.cardId}
                 room={room}
                 roomCode={roomCode}
                 playerId={playerId}
                 game={game}
               />
+            </ActionModal>
+          )}
+
+          {game.pendingDecision?.type === 'cardTarget' &&
+            game.pendingDecision.forPlayerId === playerId && (
+              <ActionModal>
+                <CardTargetPrompt
+                  cardId={game.pendingDecision.cardId}
+                  room={room}
+                  roomCode={roomCode}
+                  playerId={playerId}
+                  game={game}
+                />
+              </ActionModal>
             )}
 
           {game.pendingDecision?.type === 'nkvdQuiz' &&
             game.pendingDecision.forPlayerId === playerId && (
-              <NkvdQuizPrompt
-                questionIndex={game.pendingDecision.questionIndex}
-                roomCode={roomCode}
-                game={game}
-              />
+              <ActionModal>
+                <NkvdQuizPrompt
+                  questionIndex={game.pendingDecision.questionIndex}
+                  roomCode={roomCode}
+                  game={game}
+                />
+              </ActionModal>
             )}
 
           <RubberDuckEncounterBanner room={room} roomCode={roomCode} playerId={playerId} game={game} />

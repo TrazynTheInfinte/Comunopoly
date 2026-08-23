@@ -99,7 +99,10 @@ export interface PieceDefinition {
   /** The in-fiction role, e.g. "Member of the Proletariat". */
   title: string;
   powerDescription: string;
+  /** The literal, flavor-text formula for this Piece's Score, verbatim from the rules. Shown on click in the endgame results - see winConditionSummary for the default, plain-English version. */
   winConditionDescription: string;
+  /** A short, plain-English gloss of winConditionDescription - what actually drives the number up, without the in-fiction framing or exact wording. Shown by default in the endgame results, since the literal formula alone wasn't landing for players seeing their Score for the first time. */
+  winConditionSummary: string;
 }
 
 /** One player's state within an in-progress game (as opposed to RoomPlayer, which is just their lobby name). */
@@ -272,6 +275,8 @@ export interface GameState {
   endgame: EndgameState | null;
   /** Recent event descriptions, newest last, capped for display. */
   log: string[];
+  /** House rule, set once at room creation (see Room.carryWestOnDisappear): when true, Disappearing keeps a player's West stash instead of zeroing it along with everything else. */
+  carryWestOnDisappear: boolean;
 }
 
 export interface ShowTrialVote {
