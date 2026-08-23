@@ -202,8 +202,10 @@ export function playJail(): void {
   tone(120, 0.28, 'sawtooth', 0.22, 0.16);
 }
 
+/** A gunshot: a sharp noise crack with a very fast low-frequency thump underneath for body, both decaying almost immediately - "sent to the wall," not a gentle fade-out. */
 export function playDisappear(): void {
-  sweep(600, 50, 0.55, 'sine', 0.22);
+  noiseBurst(0.1, 0.55);
+  sweep(180, 40, 0.14, 'sawtooth', 0.4);
 }
 
 export function playEndgameFanfare(): void {

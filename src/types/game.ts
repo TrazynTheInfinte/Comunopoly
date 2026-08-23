@@ -288,6 +288,16 @@ export interface GameState {
    * itself. Cleared once the turn actually ends.
    */
   lastJailRedirect: { playerId: string; fromTileId: number } | null;
+  /**
+   * Set by disappearPlayer to whoever most recently Disappeared - a UI
+   * hint for useStagedGame, same idea as lastJailRedirect: a Disappear
+   * always resets position to 0 (STOY), which can coincidentally be a
+   * *short* distance from wherever the player actually was (e.g.
+   * position 38), and without this, that reset gets misread as a
+   * normal short walk instead of the teleport it actually is. Not read
+   * anywhere in engine.ts itself.
+   */
+  lastDisappearedPlayerId: string | null;
 }
 
 export interface ShowTrialVote {

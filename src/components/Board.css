@@ -620,6 +620,12 @@
   font-weight: 700;
 }
 
+.board-popup-price-struck {
+  text-decoration: line-through;
+  opacity: 0.6;
+  font-weight: 400;
+}
+
 .board-popup-rent {
   margin: 0.3em auto 0;
   border-collapse: collapse;

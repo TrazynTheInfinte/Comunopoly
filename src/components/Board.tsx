@@ -1,7 +1,7 @@
-import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { BOARD, RAILROAD_RENT_BY_COUNT } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
-import type { BoardTile, CardDeck, GameState } from '../types/game';
+import type { BoardTile, GameState } from '../types/game';
 import type { Room } from '../types/room';
 import {
   ArrowIcon,
@@ -29,8 +29,6 @@ interface BoardProps {
   roomCode: string;
   playerId: string;
   game: GameState;
-  /** Reports a deck pile's on-screen position the instant it's clicked, before the real draw resolves - lets GameBoard fly a card from here to where the reveal panel appears. Purely cosmetic; the actual draw still goes through drawFromPileAndSync exactly as before. */
-  onDeckClick?: (deck: CardDeck, originRect: DOMRect) => void;
 }
 
 // Stable per-seat colors for the plain position tokens - not Piece art
@@ -155,8 +153,8 @@ function BoardPopup({
 
 const HOUSE_LABELS = ['No houses', '1 house', '2 houses', '3 houses', '4 houses', 'Hotel'];
 
-/** Rent breakdown shown in a tile's popup - the price on its own wasn't enough for players to know what landing on it actually costs. Properties get the full houses-to-hotel table; railroads get the by-count table; utilities (Chernobyl Power, The Volga) have no fixed rent, so they're left out entirely. */
-function TileRentInfo({ tile }: { tile: BoardTile }) {
+/** Rent breakdown shown in a tile's popup - the price on its own wasn't enough for players to know what landing on it actually costs. Properties get the full houses-to-hotel table; railroads get the by-count table; utilities (Chernobyl Power, The Volga) have no fixed rent, so they're left out entirely. isViewerBattleship shows the halved railroad price (its Special Power) struck through the normal one, rather than silently showing whichever applies - a player switching between Pieces mid-game needs to see both to know what changed. */
+function TileRentInfo({ tile, isViewerBattleship }: { tile: BoardTile; isViewerBattleship: boolean }) {
   if (tile.kind === 'property') {
     return (
       <>
@@ -180,7 +178,16 @@ function TileRentInfo({ tile }: { tile: BoardTile }) {
     return (
       <>
         <br />
-        <span className="board-popup-price">Price: ₽{tile.price}</span>
+        <span className="board-popup-price">
+          Price:{' '}
+          {isViewerBattleship ? (
+            <>
+              <span className="board-popup-price-struck">₽{tile.price}</span> ₽{Math.floor(tile.price / 2)}
+            </>
+          ) : (
+            `₽${tile.price}`
+          )}
+        </span>
         <table className="board-popup-rent">
           <tbody>
             {RAILROAD_RENT_BY_COUNT.map((rent, index) => (
@@ -209,7 +216,7 @@ function TileRentInfo({ tile }: { tile: BoardTile }) {
  * (that stepping itself is driven by `game` already being the "staged"
  * state from useStagedGame, not anything this component does itself).
  */
-function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
+function Board({ room, roomCode, playerId, game }: BoardProps) {
   // Which occupant token (if any) currently has its owner label open -
   // a tap/click toggles it, since a hover-only title tooltip doesn't
   // work on touch devices at all, and works well enough on desktop that
@@ -259,10 +266,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
           type="button"
           className={`board-center-deck board-center-deck-communist ${awaitingDeck === 'communistTest' ? 'is-hot' : ''} ${awaitingDeck === 'communistTest' && isMyTurn ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'communistTest'}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
-            onDeckClick?.('communistTest', event.currentTarget.getBoundingClientRect());
-            drawFromPileAndSync(roomCode, game);
-          }}
+          onClick={() => drawFromPileAndSync(roomCode, game)}
         >
           <HammerIcon className="board-center-deck-icon" />
           COMMUNIST TEST
@@ -271,10 +275,7 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
           type="button"
           className={`board-center-deck board-center-deck-nochance ${awaitingDeck === 'noChance' ? 'is-hot' : ''} ${awaitingDeck === 'noChance' && isMyTurn ? 'is-clickable' : ''}`}
           disabled={!isMyTurn || awaitingDeck !== 'noChance'}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
-            onDeckClick?.('noChance', event.currentTarget.getBoundingClientRect());
-            drawFromPileAndSync(roomCode, game);
-          }}
+          onClick={() => drawFromPileAndSync(roomCode, game)}
         >
           <ChanceIcon className="board-center-deck-icon" />
           NO CHANCE
@@ -419,7 +420,9 @@ function Board({ room, roomCode, playerId, game, onDeckClick }: BoardProps) {
           {BOARD.find((t) => t.id === openTileId)?.name}
           {(() => {
             const tile = BOARD.find((t) => t.id === openTileId);
-            return tile ? <TileRentInfo tile={tile} /> : null;
+            return tile ? (
+              <TileRentInfo tile={tile} isViewerBattleship={game.players[playerId]?.pieceId === 'battleship'} />
+            ) : null;
           })()}
         </BoardPopup>
       )}

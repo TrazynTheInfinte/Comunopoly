@@ -38,3 +38,20 @@
   color: var(--color-paper);
   z-index: 1;
 }
+
+/* Face-down, for everyone except whoever's actually choosing - shows
+   that a choice is happening without handing everyone else the same
+   look-ahead advantage the Piece's power is supposed to be exclusive
+   to (see the isMine check in CardChoicePrompt.tsx). */
+.card-choice-card-back {
+  display: block;
+  cursor: default;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-black),
+    var(--color-black) 4px,
+    var(--color-grey-light) 4px,
+    var(--color-grey-light) 8px
+  );
+  border-color: var(--color-black);
+}

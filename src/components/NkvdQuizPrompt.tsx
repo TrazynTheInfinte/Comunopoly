@@ -9,12 +9,29 @@ interface NkvdQuizPromptProps {
   game: GameState;
 }
 
+// Fisher-Yates - a plain module-level function (not from game/engine.ts's
+// own seeded `shuffle`, which needs a deterministic rng for replay/sync;
+// this is purely local display order, never written to GameState).
+function shuffled<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 function NkvdQuizPrompt({ questionIndex, roomCode, game }: NkvdQuizPromptProps) {
-  const [answer, setAnswer] = useState('');
   const question = NKVD_QUESTIONS[questionIndex];
+  // Shuffled once per question (not on every re-render), so the correct
+  // answer isn't always in the same slot but the options don't jump
+  // around while the player is still deciding.
+  const [options] = useState(() => shuffled([question.answer, ...question.distractors]));
+  const [answer, setAnswer] = useState('');
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!answer) return;
     void answerNkvdQuizAndSync(roomCode, game, answer);
   }
 
@@ -22,13 +39,19 @@ function NkvdQuizPrompt({ questionIndex, roomCode, game }: NkvdQuizPromptProps) 
     <form className="purchase-prompt card-prompt" onSubmit={handleSubmit}>
       <p className="card-title">NKVD</p>
       <p>{question.question}</p>
-      <input
-        value={answer}
-        onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Your answer..."
-        autoFocus
-      />
-      <button type="submit">Answer</button>
+      <select value={answer} onChange={(event) => setAnswer(event.target.value)} autoFocus>
+        <option value="" disabled>
+          Choose an answer...
+        </option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <button type="submit" disabled={!answer}>
+        Answer
+      </button>
     </form>
   );
 }

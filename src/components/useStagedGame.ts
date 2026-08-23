@@ -65,6 +65,17 @@ export function useStagedGame(liveGame: GameState | undefined): GameState | unde
     const prevPosition = prevLive.players[moverId].position;
     const backward = mover.movingBackward;
 
+    // A Disappear resets position to 0 (STOY) unconditionally - that's
+    // always a teleport, never a walk, but a plain distance check can't
+    // tell it apart from a real short move that happened to land on
+    // STOY (e.g. starting from tile 38, 2 tiles from STOY either way).
+    // engine.ts's disappearPlayer stamps lastDisappearedPlayerId for
+    // exactly this reason.
+    if (liveGame.lastDisappearedPlayerId === moverId && mover.position === 0) {
+      setStaged(liveGame);
+      return;
+    }
+
     // Landing on Go To Jail, or falling short on the STOY pass fee mid-
     // move, redirects the mover to jail *after* they've already moved
     // normally - but that redirect is baked into the same Firestore

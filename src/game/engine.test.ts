@@ -1284,6 +1284,40 @@ describe('newly automated cards', () => {
     expect(state.log.some((entry) => entry.includes('p1') || entry.includes('p2'))).toBe(false);
   });
 
+  it('ends the Fourth International hunt if the secret Trotsky Disappears some other way before being accused', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // p1 is Trotsky
+
+    expect(state.players.p1.isTrotsky).toBe(true);
+    expect(state.trotskyHidingSpot).not.toBeNull();
+
+    state = devForceDisappear(state, 'p1');
+
+    expect(state.players.p1.isTrotsky).toBe(false);
+    // The hunt ends outright rather than leaving a hiding spot with no
+    // real Trotsky left behind it - every player would otherwise show
+    // as "Notsky" with no way to ever win the accusation.
+    expect(state.trotskyHidingSpot).toBeNull();
+  });
+
+  it("leaves an unrelated player's Disappear alone during an active Fourth International hunt", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'fourthInternational');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    state = drawFromPile(state, () => 0); // p1 is Trotsky
+
+    state = devForceDisappear(state, 'p2'); // not the secret Trotsky
+
+    expect(state.players.p1.isTrotsky).toBe(true);
+    expect(state.trotskyHidingSpot).not.toBeNull();
+  });
+
   it('"Siege of Stalingrad" seizes a target opponent property, locking it permanently', () => {
     let state = createInitialGameState(PLAYERS);
     state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
@@ -2638,6 +2672,25 @@ describe('Destitute (unpayable debts send you to jail instead of going negative)
     expect(state.players.p1.roubles).toBe(10);
     expect(state.players.p1.inJail).toBe(true);
     expect(state.pendingDecision).toBeNull(); // never got a purchase prompt for tile 1
+  });
+
+  it('secures pendingWestRoubles even when the STOY pass fee itself sends the player to jail', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 10, pendingWestRoubles: 300, ownedTileIds: [] }, // fee is 50
+      },
+    };
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1
+
+    state = rollDice(state);
+
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.westRoubles).toBe(300); // secured despite the jailing
+    expect(state.players.p1.pendingWestRoubles).toBe(0);
   });
 
   it("can't afford a Telegraph Union toll - jailed, no split paid to the Commissar", () => {

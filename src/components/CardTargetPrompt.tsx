@@ -1,9 +1,23 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { getTile } from '../data/board';
 import { findCard } from '../data/cards';
 import { resolveCardTargetAndSync } from '../lib/gameSync';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
+
+// The tile's color group as a real background color on its <option> -
+// with a dozen-plus properties in one flat dropdown, picking a target
+// by name alone meant cross-checking the board to know what you were
+// actually about to seize. Most browsers do respect background-color/
+// color on <option> (Windows and Android reliably; Safari/iOS mostly
+// ignores it and falls back to the default list style - a graceful,
+// harmless degradation, not a broken one). Railroads have no color
+// group on the board itself, so they're left unstyled here too.
+function tileOptionStyle(tileId: number): CSSProperties {
+  const tile = getTile(tileId);
+  if (tile.kind !== 'property') return {};
+  return { backgroundColor: `var(--group-${tile.colorGroup})`, color: 'var(--color-paper)' };
+}
 
 interface CardTargetPromptProps {
   cardId: string;
@@ -64,7 +78,7 @@ function CardTargetPrompt({ cardId, room, roomCode, playerId, game }: CardTarget
             onChange={(event) => setSelectedTileId(Number(event.target.value))}
           >
             {opponentTileOptions.map(({ tileId, ownerId }) => (
-              <option key={tileId} value={tileId}>
+              <option key={tileId} value={tileId} style={tileOptionStyle(tileId)}>
                 {getTile(tileId).name} ({room.players[ownerId]?.name})
               </option>
             ))}
@@ -77,7 +91,7 @@ function CardTargetPrompt({ cardId, room, roomCode, playerId, game }: CardTarget
           onChange={(event) => setSelectedTileId(Number(event.target.value))}
         >
           {anyPropertyOptions.map((tile) => (
-            <option key={tile.id} value={tile.id}>
+            <option key={tile.id} value={tile.id} style={tileOptionStyle(tile.id)}>
               {tile.name}
             </option>
           ))}

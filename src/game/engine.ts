@@ -111,6 +111,7 @@ export function createInitialGameState(
     log: ['The game begins.'],
     carryWestOnDisappear,
     lastJailRedirect: null,
+    lastDisappearedPlayerId: null,
   };
 
   // Degenerate edge case: a full 12-player room claims every Piece right
@@ -583,6 +584,7 @@ function disappearPlayer(
     housesRemaining,
     hotelsRemaining,
     mortgagedTileIds,
+    lastDisappearedPlayerId: playerId,
     retiredPieceIds: [...state.retiredPieceIds, retiredPieceId],
     // Hat's piece is retired along with everything else here, so any
     // groups it was already rewarded for no longer apply - completing
@@ -626,6 +628,15 @@ function disappearPlayer(
       next.rubberDuckEncounter.targetPlayerId === playerId)
   ) {
     next = { ...next, rubberDuckEncounter: null };
+  }
+  // The secretly-marked Trotsky Disappeared some other way (bankruptcy,
+  // 3 doubles, anything not the accusation itself) before ever being
+  // accused - isTrotsky was already just cleared above, but without
+  // this, trotskyHidingSpot stays set with no real Trotsky left behind
+  // it, leaving the hunt permanently unwinnable instead of just ending.
+  if (player.isTrotsky && next.trotskyHidingSpot !== null) {
+    next = { ...next, trotskyHidingSpot: null };
+    next = logEvent(next, 'Fourth International: Trotsky Disappeared before being caught - the hunt is off.');
   }
   if (
     next.pendingDecision &&
@@ -1565,29 +1576,16 @@ function moveAndResolve(
 
   next = logEvent(next, `Moved to ${getTile(newPosition).name}.`);
 
-  // Iron's power: never has to pay the bribe to pass STOY.
-  if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
-    if (!canAfford(next, playerId, STOY_PASS_FEE)) {
-      return logEvent(
-        sendToJail(next, playerId),
-        `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
-      );
-    }
-    next = payRoubles(next, playerId, STOY_PASS_FEE);
-    next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
-  }
-  if (landedOnStoy) {
-    next = giveRoubles(next, playerId, STOY_LANDING_BONUS);
-    next = logEvent(
-      next,
-      `Collected ${STOY_LANDING_BONUS} roubles for landing on STOY.`,
-    );
-  }
-
+  // Both of these trigger off reaching STOY itself (passing through or
+  // landing exactly) and have to run before the STOY fee's affordability
+  // check below - that check can end the move early (straight to jail),
+  // and neither of these is conditional on actually being able to pay
+  // the fee: Smuggled Roubles reaching safety, and a Blacklist clearing,
+  // aren't things a STOY toll should be able to block.
+  //
   // STOY sits directly opposite Free Parking on the board - reaching it
-  // (passing through or landing exactly) is the other way (besides
-  // making it back to Free Parking itself) to secure Smuggled Roubles
-  // still waiting there.
+  // is the other way (besides making it back to Free Parking itself) to
+  // secure Smuggled Roubles still waiting there.
   if ((passedStoy || landedOnStoy) && next.players[playerId].pendingWestRoubles > 0) {
     const secured = next.players[playerId].pendingWestRoubles;
     next = {
@@ -1615,6 +1613,25 @@ function moveAndResolve(
       players: { ...next.players, [playerId]: { ...next.players[playerId], blacklisted: false } },
     };
     next = logEvent(next, 'No longer blacklisted - you can buy and collect rent again.');
+  }
+
+  // Iron's power: never has to pay the bribe to pass STOY.
+  if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
+    if (!canAfford(next, playerId, STOY_PASS_FEE)) {
+      return logEvent(
+        sendToJail(next, playerId),
+        `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
+      );
+    }
+    next = payRoubles(next, playerId, STOY_PASS_FEE);
+    next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
+  }
+  if (landedOnStoy) {
+    next = giveRoubles(next, playerId, STOY_LANDING_BONUS);
+    next = logEvent(
+      next,
+      `Collected ${STOY_LANDING_BONUS} roubles for landing on STOY.`,
+    );
   }
 
   // Go Into Hiding: landing exactly on someone else's hiding spot finds
@@ -2341,6 +2358,7 @@ export function endTurn(state: GameState): GameState {
     lastRoll: null,
     lastRollWasDoubles: false,
     lastJailRedirect: null,
+    lastDisappearedPlayerId: null,
   };
 }
 

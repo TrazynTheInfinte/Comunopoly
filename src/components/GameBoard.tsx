@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
 import { findCard } from '../data/cards';
@@ -36,6 +36,7 @@ import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
 import { useAfkSelfCheck } from './useAfkSelfCheck';
+import { useCardFlight } from './useCardFlight';
 import { useGameMusic } from './useGameMusic';
 import { useHostAfkWatchdog } from './useHostAfkWatchdog';
 import { useIsDesktop } from './useIsDesktop';
@@ -114,6 +115,11 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const afkPrompt = useAfkSelfCheck(roomCode, game, playerId, isMyTurnEarly);
   useHostAfkWatchdog(roomCode, room, game, isHost);
   useYourTurnChime(isMyTurnEarly);
+  const handleCardFlight = useCallback(
+    (deck: CardDeck, from: DOMRect, to: DOMRect) => setCardFlight({ deck, from, to }),
+    [],
+  );
+  useCardFlight(game, layoutActionsRef.current, handleCardFlight);
 
   // RoomView only ever renders GameBoard once room.game exists, but
   // TypeScript can't see that from here, so we still need this check to
@@ -130,10 +136,15 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
     game.pendingDecision?.type === 'purchase' || game.pendingDecision?.type === 'volgaOffer'
       ? getTile(game.pendingDecision.tileId)
       : null;
-  const pendingCard =
-    game.pendingDecision?.type === 'cardDrawn' && game.pendingDecision.forPlayerId === playerId
-      ? findCard(game.pendingDecision.cardId)
-      : null;
+  // Shown to EVERY viewer, not just whoever's resolving it - a drawn
+  // card used to only render for pendingDecision.forPlayerId, so
+  // everyone else just saw nothing happen until the drawer clicked
+  // Continue. Only the actual resolver gets the button (see the
+  // isPendingCardMine check below); everyone else gets a read-only
+  // "waiting on" view of the same card.
+  const pendingCard = game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
+  const isPendingCardMine =
+    game.pendingDecision?.type === 'cardDrawn' && game.pendingDecision.forPlayerId === playerId;
   const me = game.players[playerId];
   const myPendingPieceChoice = game.pendingPieceChoices.includes(playerId);
   const myPendingEndgameTarget = game.endgame?.pendingTargetChoices.includes(playerId) ?? false;
@@ -154,12 +165,6 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
     } finally {
       setIsRolling(false);
     }
-  }
-
-  function handleDeckClick(deck: CardDeck, originRect: DOMRect) {
-    const targetRect = layoutActionsRef.current?.getBoundingClientRect();
-    if (!targetRect) return;
-    setCardFlight({ deck, from: originRect, to: targetRect });
   }
 
   return (
@@ -187,7 +192,10 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
 
       {me && <PieceInfoPanel pieceId={me.pieceId} />}
 
-      <p className="turn-indicator">
+      <p
+        key={currentTurnPlayerId}
+        className={`turn-indicator ${isMyTurn ? 'is-my-turn' : ''}`}
+      >
         {isMyTurn ? 'Your turn' : `${room.players[currentTurnPlayerId]?.name}'s turn`}
       </p>
 
@@ -255,7 +263,11 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                   </span>
                   <span className="player-roubles">
                     ₽<AnimatedNumber value={player.roubles} />
-                    {(player.westRoubles > 0 || player.pendingWestRoubles > 0) && (
+                    {/* West stash (secured or still waiting) is only shown to its
+                        own owner - everyone else seeing exactly how much someone
+                        has smuggled (and how much more is en route) defeats the
+                        point of Smuggling being a secret, protected stash. */}
+                    {id === playerId && (player.westRoubles > 0 || player.pendingWestRoubles > 0) && (
                       <>
                         {' (West: ₽'}
                         <AnimatedNumber value={player.westRoubles} />
@@ -327,10 +339,25 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               <div className="purchase-prompt">
                 <p>
                   Buy {pendingTile.name}
-                  {'price' in pendingTile ? ` for ₽${pendingTile.price}` : ''}?
+                  {'price' in pendingTile && (
+                    <>
+                      {' for '}
+                      {pendingTile.kind === 'railroad' && me?.pieceId === 'battleship' ? (
+                        <>
+                          <span className="board-popup-price-struck">₽{pendingTile.price}</span>{' '}
+                          ₽{Math.floor(pendingTile.price / 2)}
+                        </>
+                      ) : (
+                        `₽${pendingTile.price}`
+                      )}
+                    </>
+                  )}
+                  ?
                 </p>
-                <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
-                <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>
+                <div className="purchase-prompt-actions">
+                  <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
+                  <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>
+                </div>
               </div>
             </ActionModal>
           )}
@@ -342,8 +369,10 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                   Give away everything you own to claim {pendingTile.name}? Your properties will be
                   split evenly among the other players.
                 </p>
-                <button onClick={() => acceptVolgaOfferAndSync(roomCode, game)}>Give It Up</button>
-                <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>Decline</button>
+                <div className="purchase-prompt-actions">
+                  <button onClick={() => acceptVolgaOfferAndSync(roomCode, game)}>Give It Up</button>
+                  <button onClick={() => declineVolgaOfferAndSync(roomCode, game)}>Decline</button>
+                </div>
               </div>
             </ActionModal>
           )}
@@ -354,14 +383,26 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                 <CardRevealSound />
                 <p className="card-title">{pendingCard.title}</p>
                 <p>{pendingCard.text}</p>
-                <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
+                {isPendingCardMine ? (
+                  <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
+                ) : (
+                  <p className="hint">
+                    Waiting for {room.players[game.pendingDecision.forPlayerId]?.name}...
+                  </p>
+                )}
               </div>
             </ActionModal>
           )}
 
-          {isMyTurn && game.pendingDecision?.type === 'cardChoice' && (
+          {game.pendingDecision?.type === 'cardChoice' && (
             <ActionModal>
-              <CardChoicePrompt deck={game.pendingDecision.deck} roomCode={roomCode} game={game} />
+              <CardChoicePrompt
+                deck={game.pendingDecision.deck}
+                roomCode={roomCode}
+                game={game}
+                isMine={isMyTurn}
+                chooserName={room.players[currentTurnPlayerId]?.name}
+              />
             </ActionModal>
           )}
 
@@ -463,13 +504,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
         </section>
 
         <div className="board-column layout-board">
-          <Board
-            room={room}
-            roomCode={roomCode}
-            playerId={playerId}
-            game={game}
-            onDeckClick={handleDeckClick}
-          />
+          <Board room={room} roomCode={roomCode} playerId={playerId} game={game} />
         </div>
 
         <div className="dice-column layout-dice">
