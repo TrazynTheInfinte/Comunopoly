@@ -1,4 +1,4 @@
-import type { PieceDefinition } from '../types/game';
+import type { PieceDefinition, PieceId } from '../types/game';
 
 // All 12 Pieces from the source rules table (rulesPrintable.pdf) - not
 // 15 as an earlier note here claimed; that was a miscount corrected once
@@ -123,4 +123,32 @@ export const STARTING_PIECES: PieceDefinition[] = [
       "You've become irrelevant to the ongoing liberation of the Global Proletariat. Your Score is calculated first: divide the money in your hand among the other players evenly (any remainder is deducted from your Score), then count your seized properties. Final score is the number of people you shared money with times that count.",
     winConditionSummary: 'Number of players you split your cash with × properties seized.',
   },
+];
+
+// Lenin mode's Piece Pool, curated by request rather than including all
+// 12 - several Special Powers were explicitly balanced against Stalin
+// mode's Score formula (most obviously Hat: a genuinely strong free-
+// house-on-completion power, offset only by "you score 0"), which
+// doesn't exist in Lenin mode at all. Without that offsetting downside
+// they'd be straightforwardly overpowered rather than a fair trade-off,
+// so they're left out of Lenin mode's Pool specifically:
+//   - hat: free houses with zero downside once Score is gone.
+//   - wheelBarrel: guaranteed free/seized purple properties, a one-sided
+//     compounding economic edge with no counterplay.
+//   - trex: can never buy but auto-seizes anything for free - a swingy,
+//     high-variance mechanic that's hard to judge fair without the
+//     Score formula that currently balances it either way.
+// The remaining 9 are all mild, comparable-strength powers (a modest
+// discount, an information/tempo edge, a minor economic nudge) with no
+// standout free-asset-generation mechanic among them.
+export const LENIN_PIECE_IDS: PieceId[] = [
+  'boot',
+  'battleship',
+  'car',
+  'iron',
+  'thimble',
+  'dog',
+  'penguin',
+  'cat',
+  'rubberDuck',
 ];

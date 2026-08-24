@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getTile } from '../data/board';
+import { findCard } from '../data/cards';
 import { acceptTradeAndSync, declineTradeAndSync, proposeTradeAndSync, withdrawTradeAndSync } from '../lib/gameSync';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
@@ -12,16 +13,15 @@ interface TradePanelProps {
   game: GameState;
 }
 
-/** Which of playerId's owned tiles can actually go into a trade right now - no houses on it (sell those first), not exempt from ownership transfers (Chernobyl, a Siege of Stalingrad lock). Mirrors engine.ts's canIncludeInTrade, just for deciding what to show as selectable here. */
+/** Which of playerId's owned tiles can actually go into a trade right now - no houses on it (sell those first), not locked (Siege of Stalingrad). Chernobyl Power/The Volga ARE tradeable - mirrors engine.ts's canIncludeInTrade, just for deciding what to show as selectable here. */
 function tradeableOwnedTileIds(game: GameState, playerId: string): number[] {
   return game.players[playerId].ownedTileIds.filter((tileId) => {
     if ((game.propertyHouses[tileId] ?? 0) > 0) return false;
-    if (game.lockedTileIds.includes(tileId)) return false;
-    return getTile(tileId).kind !== 'utility';
+    return !game.lockedTileIds.includes(tileId);
   });
 }
 
-function toggleInSet(set: Set<number>, value: number): Set<number> {
+function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set);
   if (next.has(value)) {
     next.delete(value);
@@ -35,29 +35,35 @@ function toggleInSet(set: Set<number>, value: number): Set<number> {
  * Player-to-player trading (both modes, not turn-gated) - always
  * visible rather than an ActionModal, since trading isn't something
  * the game is waiting on anyone to resolve. A "Propose Trade" builder
- * (pick a player, pick tiles/roubles on each side) plus a list of
- * trades already on the table involving this player, with Accept/
+ * (pick a player, pick tiles/cards/roubles on each side) plus a list
+ * of trades already on the table involving this player, with Accept/
  * Decline (as recipient) or Withdraw (as proposer).
  */
 function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [targetPlayerId, setTargetPlayerId] = useState('');
   const [myTileIds, setMyTileIds] = useState<Set<number>>(new Set());
+  const [myCardIds, setMyCardIds] = useState<Set<string>>(new Set());
   const [myRoubles, setMyRoubles] = useState(0);
   const [theirTileIds, setTheirTileIds] = useState<Set<number>>(new Set());
+  const [theirCardIds, setTheirCardIds] = useState<Set<string>>(new Set());
   const [theirRoubles, setTheirRoubles] = useState(0);
 
   const otherPlayerIds = game.turnOrder.filter((id) => id !== playerId && !game.players[id].isSpectating);
   const effectiveTargetId = otherPlayerIds.includes(targetPlayerId) ? targetPlayerId : (otherPlayerIds[0] ?? '');
   const myTradeableTileIds = tradeableOwnedTileIds(game, playerId);
   const theirTradeableTileIds = effectiveTargetId ? tradeableOwnedTileIds(game, effectiveTargetId) : [];
+  const myHeldCardIds = game.players[playerId].heldCardIds;
+  const theirHeldCardIds = effectiveTargetId ? game.players[effectiveTargetId].heldCardIds : [];
 
   const myTrades = game.activeTrades.filter((t) => t.fromPlayerId === playerId || t.toPlayerId === playerId);
 
   function resetBuilder() {
     setMyTileIds(new Set());
+    setMyCardIds(new Set());
     setMyRoubles(0);
     setTheirTileIds(new Set());
+    setTheirCardIds(new Set());
     setTheirRoubles(0);
     setIsBuilderOpen(false);
   }
@@ -69,8 +75,8 @@ function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
       game,
       playerId,
       effectiveTargetId,
-      { tileIds: [...myTileIds], roubles: myRoubles },
-      { tileIds: [...theirTileIds], roubles: theirRoubles },
+      { tileIds: [...myTileIds], roubles: myRoubles, cardIds: [...myCardIds] },
+      { tileIds: [...theirTileIds], roubles: theirRoubles, cardIds: [...theirCardIds] },
     );
     resetBuilder();
   }
@@ -107,6 +113,16 @@ function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
                   {getTile(tileId).name}
                 </label>
               ))}
+              {myHeldCardIds.map((cardId) => (
+                <label key={cardId}>
+                  <input
+                    type="checkbox"
+                    checked={myCardIds.has(cardId)}
+                    onChange={() => setMyCardIds((current) => toggleInSet(current, cardId))}
+                  />
+                  {findCard(cardId).title}
+                </label>
+              ))}
               <label>
                 Roubles:
                 <input
@@ -129,6 +145,16 @@ function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
                     onChange={() => setTheirTileIds((current) => toggleInSet(current, tileId))}
                   />
                   {getTile(tileId).name}
+                </label>
+              ))}
+              {theirHeldCardIds.map((cardId) => (
+                <label key={cardId}>
+                  <input
+                    type="checkbox"
+                    checked={theirCardIds.has(cardId)}
+                    onChange={() => setTheirCardIds((current) => toggleInSet(current, cardId))}
+                  />
+                  {findCard(cardId).title}
                 </label>
               ))}
               <label>
@@ -155,8 +181,10 @@ function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
             const isRecipient = trade.toPlayerId === playerId;
             const otherId = isRecipient ? trade.fromPlayerId : trade.toPlayerId;
             const giveTileIds = isRecipient ? trade.offerTileIds : trade.requestTileIds;
+            const giveCardIds = isRecipient ? trade.offerCardIds : trade.requestCardIds;
             const giveRoubles = isRecipient ? trade.offerRoubles : trade.requestRoubles;
             const getTileIds = isRecipient ? trade.requestTileIds : trade.offerTileIds;
+            const getCardIds = isRecipient ? trade.requestCardIds : trade.offerCardIds;
             const getRoubles = isRecipient ? trade.requestRoubles : trade.offerRoubles;
             return (
               <li key={trade.id}>
@@ -164,12 +192,22 @@ function TradePanel({ playerId, roomCode, room, game }: TradePanelProps) {
                   {isRecipient ? `${room.players[otherId]?.name} offers you:` : `You offered ${room.players[otherId]?.name}:`}
                 </p>
                 <p className="trade-side">
-                  Them: {[...giveTileIds.map((id) => getTile(id).name), giveRoubles > 0 ? `₽${giveRoubles}` : null]
+                  Them:{' '}
+                  {[
+                    ...giveTileIds.map((id) => getTile(id).name),
+                    ...giveCardIds.map((id) => findCard(id).title),
+                    giveRoubles > 0 ? `₽${giveRoubles}` : null,
+                  ]
                     .filter(Boolean)
                     .join(', ') || 'nothing'}
                 </p>
                 <p className="trade-side">
-                  You: {[...getTileIds.map((id) => getTile(id).name), getRoubles > 0 ? `₽${getRoubles}` : null]
+                  You:{' '}
+                  {[
+                    ...getTileIds.map((id) => getTile(id).name),
+                    ...getCardIds.map((id) => findCard(id).title),
+                    getRoubles > 0 ? `₽${getRoubles}` : null,
+                  ]
                     .filter(Boolean)
                     .join(', ') || 'nothing'}
                 </p>

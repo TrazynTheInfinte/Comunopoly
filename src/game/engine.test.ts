@@ -3805,7 +3805,7 @@ describe('trading (both modes)', () => {
       },
     };
 
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 50 }, { tileIds: [8], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 50, cardIds: [] }, { tileIds: [8], roubles: 0, cardIds: [] });
     expect(state.activeTrades).toHaveLength(1);
 
     state = acceptTrade(state, 'trade-1');
@@ -3817,10 +3817,79 @@ describe('trading (both modes)', () => {
     expect(state.players.p2.roubles).toBe(550);
   });
 
+  it("an equal-value rouble trade at the 1000 hoarding limit doesn't wrongly jail anyone", () => {
+    // Regression: applying "pay 2, then separately give 2" (one direction
+    // at a time) could transiently push a balance to 1002 mid-trade and
+    // jail someone for a swap that nets to zero change either way.
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 1000 },
+        p2: { ...state.players.p2, roubles: 1000 },
+      },
+    };
+    state = proposeTrade(
+      state,
+      'trade-1',
+      'p1',
+      'p2',
+      { tileIds: [], roubles: 2, cardIds: [] },
+      { tileIds: [], roubles: 2, cardIds: [] },
+    );
+
+    state = acceptTrade(state, 'trade-1');
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p2.roubles).toBe(1000);
+    expect(state.players.p1.inJail).toBe(false);
+    expect(state.players.p2.inJail).toBe(false);
+  });
+
+  it('utility tiles (Chernobyl Power, The Volga) are tradeable, unlike Kulak/T-Rex auto-seize', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12] } } }; // Chernobyl Power
+    state = proposeTrade(
+      state,
+      'trade-1',
+      'p1',
+      'p2',
+      { tileIds: [12], roubles: 0, cardIds: [] },
+      { tileIds: [], roubles: 0, cardIds: [] },
+    );
+
+    state = acceptTrade(state, 'trade-1');
+
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+    expect(state.players.p2.ownedTileIds).toEqual([12]);
+  });
+
+  it('held cards (Denounce Your Collaborators, Secret Informant, Show Trial) are tradeable', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, heldCardIds: ['showTrial'] } },
+    };
+    state = proposeTrade(
+      state,
+      'trade-1',
+      'p1',
+      'p2',
+      { tileIds: [], roubles: 0, cardIds: ['showTrial'] },
+      { tileIds: [], roubles: 0, cardIds: [] },
+    );
+
+    state = acceptTrade(state, 'trade-1');
+
+    expect(state.players.p1.heldCardIds).toEqual([]);
+    expect(state.players.p2.heldCardIds).toEqual(['showTrial']);
+  });
+
   it('decline removes the offer without swapping anything', () => {
     let state = createInitialGameState(PLAYERS);
     state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
 
     state = declineTrade(state, 'trade-1');
 
@@ -3831,7 +3900,7 @@ describe('trading (both modes)', () => {
   it('withdraw removes the offer without swapping anything', () => {
     let state = createInitialGameState(PLAYERS);
     state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
 
     state = withdrawTrade(state, 'trade-1');
 
@@ -3847,7 +3916,7 @@ describe('trading (both modes)', () => {
       propertyHouses: { 6: 2 },
     };
 
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
 
     expect(state.activeTrades).toHaveLength(0);
   });
@@ -3860,7 +3929,7 @@ describe('trading (both modes)', () => {
       lockedTileIds: [6],
     };
 
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
 
     expect(state.activeTrades).toHaveLength(0);
   });
@@ -3868,7 +3937,7 @@ describe('trading (both modes)', () => {
   it('accept fails gracefully (no swap, just removes the offer) if something changed since it was proposed', () => {
     let state = createInitialGameState(PLAYERS);
     state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
 
     // p1 loses the property some other way before p2 accepts.
     state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [] } } };
@@ -3882,7 +3951,7 @@ describe('trading (both modes)', () => {
   it('Disappearing clears any trades involving that player', () => {
     let state = createInitialGameState(PLAYERS);
     state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
-    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0, cardIds: [] }, { tileIds: [], roubles: 0, cardIds: [] });
     expect(state.activeTrades).toHaveLength(1);
 
     state = devForceDisappear(state, 'p1');

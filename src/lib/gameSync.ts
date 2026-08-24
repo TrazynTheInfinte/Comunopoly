@@ -1,6 +1,6 @@
 import { deleteField, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { STARTING_PIECES } from '../data/pieces';
+import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import { pickAvailablePiece } from './rooms';
 import type { CardDeck, GameState, PieceId } from '../types/game';
 import type { Room, RulesetMode } from '../types/room';
@@ -99,10 +99,15 @@ export async function endGameEntirely(roomCode: string) {
  * game, so there's no reason to make them pick blind again.
  */
 export async function startNewMatch(roomCode: string, room: Room) {
+  // Lenin mode's Pool is a curated subset (LENIN_PIECE_IDS), smaller
+  // than the full 12 - cap how many players get an assignment to
+  // whichever Pool actually applies, not always the full roster's size.
+  const allowedPieceIds = room.rulesetMode === 'lenin' ? LENIN_PIECE_IDS : undefined;
+  const poolSize = allowedPieceIds?.length ?? STARTING_PIECES.length;
   const claimed: PieceId[] = [];
   const assignments: { playerId: string; pieceId: PieceId }[] = [];
-  for (const playerId of Object.keys(room.players).slice(0, STARTING_PIECES.length)) {
-    const pieceId = pickAvailablePiece(claimed);
+  for (const playerId of Object.keys(room.players).slice(0, poolSize)) {
+    const pieceId = pickAvailablePiece(claimed, allowedPieceIds);
     if (!pieceId) break; // more players than Pieces exist - shouldn't happen, but don't crash if it does
     claimed.push(pieceId);
     assignments.push({ playerId, pieceId });
@@ -308,8 +313,8 @@ export async function proposeTradeAndSync(
   game: GameState,
   fromPlayerId: string,
   toPlayerId: string,
-  offer: { tileIds: number[]; roubles: number },
-  request: { tileIds: number[]; roubles: number },
+  offer: { tileIds: number[]; roubles: number; cardIds: string[] },
+  request: { tileIds: number[]; roubles: number; cardIds: string[] },
 ) {
   await writeGameState(
     roomCode,

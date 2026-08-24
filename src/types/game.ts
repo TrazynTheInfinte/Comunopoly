@@ -337,9 +337,12 @@ export interface TradeOffer {
   /** What fromPlayerId is putting up. */
   offerTileIds: number[];
   offerRoubles: number;
+  /** Held card IDs (Denounce Your Collaborators, Secret Informant, Show Trial) fromPlayerId is putting up - see GamePlayerState.heldCardIds. */
+  offerCardIds: string[];
   /** What fromPlayerId wants from toPlayerId in return. */
   requestTileIds: number[];
   requestRoubles: number;
+  requestCardIds: string[];
 }
 
 export interface ShowTrialVote {

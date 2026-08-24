@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { STARTING_PIECES } from '../data/pieces';
+import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import { startGame } from '../lib/gameSync';
 import { isPlayerAway } from '../lib/presence';
 import { choosePiece, closeLobby, leaveRoom } from '../lib/rooms';
@@ -27,6 +27,12 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
   const me = room.players[playerId];
   const claimedPieceIds = players.map(([, player]) => player.pieceId);
   const everyoneHasAPiece = players.every(([, player]) => player.pieceId !== null);
+  // Lenin mode restricts the beginner-mode picker (and experienced-mode's
+  // auto-assignment, see lib/rooms.ts) to a curated subset of Pieces -
+  // see LENIN_PIECE_IDS for why.
+  const selectablePieces = STARTING_PIECES.filter(
+    (piece) => room.rulesetMode !== 'lenin' || LENIN_PIECE_IDS.includes(piece.id),
+  );
 
   async function handleChoosePiece(pieceId: PieceId) {
     setError('');
@@ -85,7 +91,7 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
             Choose your Piece - its Special Power and Win Condition stay hidden until the game starts.
           </p>
           <ul className="piece-picker-list">
-            {STARTING_PIECES.map((piece) => {
+            {selectablePieces.map((piece) => {
               const taken = claimedPieceIds.includes(piece.id);
               return (
                 <li key={piece.id}>

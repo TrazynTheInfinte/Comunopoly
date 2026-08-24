@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { STARTING_PIECES } from '../data/pieces';
+import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import type { PieceId } from '../types/game';
 import type { Room, RoomMode, RulesetMode } from '../types/room';
 
@@ -27,11 +27,12 @@ function randomRoomCode(): string {
   return code;
 }
 
-/** Picks a random Piece not already claimed by anyone in the room - null if none are left. Exported for startNewMatch (gameSync.ts), which assigns one to every current player the same way experienced-mode joining already does. */
-export function pickAvailablePiece(claimedPieceIds: (PieceId | null)[]): PieceId | null {
-  const available = STARTING_PIECES.map((piece) => piece.id).filter(
-    (id) => !claimedPieceIds.includes(id),
-  );
+/** Picks a random Piece not already claimed by anyone in the room - null if none are left. `allowedPieceIds` narrows the Pool (Lenin mode's curated subset, LENIN_PIECE_IDS - see data/pieces.ts for why); omit for the full 12. Exported for startNewMatch (gameSync.ts), which assigns one to every current player the same way experienced-mode joining already does. */
+export function pickAvailablePiece(
+  claimedPieceIds: (PieceId | null)[],
+  allowedPieceIds: PieceId[] = STARTING_PIECES.map((piece) => piece.id),
+): PieceId | null {
+  const available = allowedPieceIds.filter((id) => !claimedPieceIds.includes(id));
   if (available.length === 0) return null;
   return available[Math.floor(Math.random() * available.length)];
 }
@@ -55,7 +56,8 @@ export async function createRoom(
   // In experienced mode the host (the only player who exists yet) gets a
   // random Piece immediately, same as anyone else joining an experienced
   // room. In beginner mode nobody has a Piece until they pick one.
-  const pieceId = mode === 'experienced' ? pickAvailablePiece([]) : null;
+  const pieceId =
+    mode === 'experienced' ? pickAvailablePiece([], rulesetMode === 'lenin' ? LENIN_PIECE_IDS : undefined) : null;
 
   for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt++) {
     const code = randomRoomCode();
@@ -99,7 +101,10 @@ export async function joinRoom(
 
   const room = snapshot.data() as Room;
   const claimedPieceIds = Object.values(room.players).map((player) => player.pieceId);
-  const pieceId = room.mode === 'experienced' ? pickAvailablePiece(claimedPieceIds) : null;
+  const pieceId =
+    room.mode === 'experienced'
+      ? pickAvailablePiece(claimedPieceIds, room.rulesetMode === 'lenin' ? LENIN_PIECE_IDS : undefined)
+      : null;
 
   await updateDoc(roomRef, {
     [`players.${playerId}`]: {
@@ -123,6 +128,9 @@ export async function choosePiece(
   }
 
   const room = snapshot.data() as Room;
+  if (room.rulesetMode === 'lenin' && !LENIN_PIECE_IDS.includes(pieceId)) {
+    throw new Error("That Piece isn't in Lenin mode's Pool.");
+  }
   const alreadyClaimed = Object.entries(room.players).some(
     ([id, player]) => id !== playerId && player.pieceId === pieceId,
   );

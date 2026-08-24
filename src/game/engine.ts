@@ -2490,12 +2490,39 @@ export function unmortgageProperty(state: GameState, playerId: string, tileId: n
 // is pending. No counter-offers in this pass: accept or decline what's
 // actually on the table.
 
-/** Whether tileId can be part of a trade offer right now: playerId must actually own it, it can't have houses on it yet (sell those first), and it can't be exempt from ownership-transferring mechanics (Chernobyl Power, Siege of Stalingrad's lock). */
+/**
+ * Whether tileId can be part of a trade offer right now: playerId must
+ * actually own it, it can't have houses on it yet (sell those first),
+ * and it can't be locked (Siege of Stalingrad). Deliberately doesn't
+ * reuse isTradeable, which also exempts Chernobyl Power - that
+ * exemption is specifically about the forced-transfer mechanics
+ * (Kulak/T-Rex auto-seize), not a rule against trading it away
+ * voluntarily; Chernobyl Power and The Volga are both tradeable here.
+ */
 function canIncludeInTrade(state: GameState, playerId: string, tileId: number): boolean {
   const player = state.players[playerId];
   if (!player.ownedTileIds.includes(tileId)) return false;
   if ((state.propertyHouses[tileId] ?? 0) > 0) return false;
-  return isTradeable(state, tileId);
+  return !state.lockedTileIds.includes(tileId);
+}
+
+/** Whether playerId is actually holding cardId right now - held cards (Denounce Your Collaborators, Secret Informant, Show Trial) are tradeable too. */
+function canIncludeCardInTrade(state: GameState, playerId: string, cardId: string): boolean {
+  return state.players[playerId].heldCardIds.includes(cardId);
+}
+
+function transferHeldCards(state: GameState, cardIds: string[], fromPlayerId: string, toPlayerId: string): GameState {
+  if (cardIds.length === 0) return state;
+  const from = state.players[fromPlayerId];
+  const to = state.players[toPlayerId];
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [fromPlayerId]: { ...from, heldCardIds: from.heldCardIds.filter((id) => !cardIds.includes(id)) },
+      [toPlayerId]: { ...to, heldCardIds: [...to.heldCardIds, ...cardIds] },
+    },
+  };
 }
 
 /**
@@ -2511,17 +2538,26 @@ export function proposeTrade(
   id: string,
   fromPlayerId: string,
   toPlayerId: string,
-  offer: { tileIds: number[]; roubles: number },
-  request: { tileIds: number[]; roubles: number },
+  offer: { tileIds: number[]; roubles: number; cardIds: string[] },
+  request: { tileIds: number[]; roubles: number; cardIds: string[] },
 ): GameState {
   if (fromPlayerId === toPlayerId) return state;
   if (!state.players[fromPlayerId] || !state.players[toPlayerId]) return state;
   if (offer.roubles < 0 || request.roubles < 0) return state;
-  if (offer.tileIds.length === 0 && offer.roubles === 0 && request.tileIds.length === 0 && request.roubles === 0) {
+  if (
+    offer.tileIds.length === 0 &&
+    offer.roubles === 0 &&
+    offer.cardIds.length === 0 &&
+    request.tileIds.length === 0 &&
+    request.roubles === 0 &&
+    request.cardIds.length === 0
+  ) {
     return state; // nothing actually on the table
   }
   if (offer.tileIds.some((t) => !canIncludeInTrade(state, fromPlayerId, t))) return state;
   if (request.tileIds.some((t) => !canIncludeInTrade(state, toPlayerId, t))) return state;
+  if (offer.cardIds.some((c) => !canIncludeCardInTrade(state, fromPlayerId, c))) return state;
+  if (request.cardIds.some((c) => !canIncludeCardInTrade(state, toPlayerId, c))) return state;
   if (!canAfford(state, fromPlayerId, offer.roubles) || !canAfford(state, toPlayerId, request.roubles)) return state;
 
   const trade: TradeOffer = {
@@ -2530,8 +2566,10 @@ export function proposeTrade(
     toPlayerId,
     offerTileIds: offer.tileIds,
     offerRoubles: offer.roubles,
+    offerCardIds: offer.cardIds,
     requestTileIds: request.tileIds,
     requestRoubles: request.roubles,
+    requestCardIds: request.cardIds,
   };
   return logEvent({ ...state, activeTrades: [...state.activeTrades, trade] }, `Proposed a trade to ${toPlayerId}.`);
 }
@@ -2549,6 +2587,8 @@ export function acceptTrade(state: GameState, tradeId: string): GameState {
   const stillValid =
     trade.offerTileIds.every((t) => canIncludeInTrade(state, trade.fromPlayerId, t)) &&
     trade.requestTileIds.every((t) => canIncludeInTrade(state, trade.toPlayerId, t)) &&
+    trade.offerCardIds.every((c) => canIncludeCardInTrade(state, trade.fromPlayerId, c)) &&
+    trade.requestCardIds.every((c) => canIncludeCardInTrade(state, trade.toPlayerId, c)) &&
     canAfford(state, trade.fromPlayerId, trade.offerRoubles) &&
     canAfford(state, trade.toPlayerId, trade.requestRoubles);
 
@@ -2563,12 +2603,21 @@ export function acceptTrade(state: GameState, tradeId: string): GameState {
   for (const tileId of trade.requestTileIds) {
     next = transferTileOwnership(next, tileId, trade.toPlayerId, trade.fromPlayerId);
   }
-  if (trade.offerRoubles > 0) {
-    next = giveRoubles(payRoubles(next, trade.fromPlayerId, trade.offerRoubles), trade.toPlayerId, trade.offerRoubles);
+  next = transferHeldCards(next, trade.offerCardIds, trade.fromPlayerId, trade.toPlayerId);
+  next = transferHeldCards(next, trade.requestCardIds, trade.toPlayerId, trade.fromPlayerId);
+
+  // Net Rouble change per player, applied once each - not a separate
+  // pay-then-give per direction, which could transiently push a
+  // balance over the 1000-rouble hoarding limit (or down to 0) partway
+  // through and wrongly jail someone for a trade that, taken as a
+  // whole, never actually left them there (e.g. trading 2 roubles for
+  // 2 roubles nets to zero change for both sides).
+  const fromDelta = trade.requestRoubles - trade.offerRoubles;
+  if (fromDelta !== 0) {
+    next = giveRoubles(next, trade.fromPlayerId, fromDelta);
+    next = giveRoubles(next, trade.toPlayerId, -fromDelta);
   }
-  if (trade.requestRoubles > 0) {
-    next = giveRoubles(payRoubles(next, trade.toPlayerId, trade.requestRoubles), trade.fromPlayerId, trade.requestRoubles);
-  }
+
   return logEvent(next, `Trade completed between ${trade.fromPlayerId} and ${trade.toPlayerId}.`);
 }
 

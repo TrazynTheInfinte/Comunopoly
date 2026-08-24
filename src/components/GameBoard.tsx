@@ -14,9 +14,10 @@ import {
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
+import { leninizeText } from '../lib/leninText';
 import { isPlayerAway } from '../lib/presence';
 import { playCardDraw } from '../lib/sound';
-import type { Room } from '../types/room';
+import type { Room, RulesetMode } from '../types/room';
 import ActionModal from './ActionModal';
 import AnimatedNumber from './AnimatedNumber';
 import Board from './Board';
@@ -75,8 +76,9 @@ function pieceName(pieceId: string): string {
 // display time, where the Room is available.
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
-function formatLogEntry(entry: string, room: Room): string {
-  return entry.replace(UUID_PATTERN, (id) => room.players[id]?.name ?? 'a departed player');
+function formatLogEntry(entry: string, room: Room, rulesetMode: RulesetMode): string {
+  const named = entry.replace(UUID_PATTERN, (id) => room.players[id]?.name ?? 'a departed player');
+  return leninizeText(named, rulesetMode);
 }
 
 // The actual board visual lives in <Board> below; everything in this
@@ -296,7 +298,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                     )}
                   </span>
                   <span className="player-position">
-                    {player.isSpectating ? 'Spectating' : getTile(player.position).name}
+                    {player.isSpectating ? 'Spectating' : leninizeText(getTile(player.position).name, game.rulesetMode)}
                     {player.inJail ? ' [JAIL]' : ''}
                     {game.pendingPieceChoices.includes(id) ? ' [choosing a new Piece]' : ''}
                   </span>
@@ -396,8 +398,8 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
             <ActionModal>
               <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
                 <CardRevealSound />
-                <p className="card-title">{pendingCard.title}</p>
-                <p>{pendingCard.text}</p>
+                <p className="card-title">{leninizeText(pendingCard.title, game.rulesetMode)}</p>
+                <p>{leninizeText(pendingCard.text, game.rulesetMode)}</p>
                 {isPendingCardMine ? (
                   <button onClick={() => acknowledgeCardAndSync(roomCode, game)}>Continue</button>
                 ) : (
@@ -509,7 +511,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               .slice()
               .reverse()
               .map((entry, index) => (
-                <li key={index}>{formatLogEntry(entry, room)}</li>
+                <li key={index}>{formatLogEntry(entry, room, game.rulesetMode)}</li>
               ))}
           </ul>
 

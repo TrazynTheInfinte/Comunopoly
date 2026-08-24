@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { BOARD, RAILROAD_RENT_BY_COUNT } from '../data/board';
 import { drawFromPileAndSync } from '../lib/gameSync';
+import { leninizeText } from '../lib/leninText';
 import type { BoardTile, GameState } from '../types/game';
 import type { Room } from '../types/room';
 import {
@@ -334,7 +335,7 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
               {tile.kind === 'jail' && <BarsIcon className="tile-icon" />}
               {tile.kind === 'go' && <ArrowIcon className="tile-icon" />}
 
-              <span className="tile-name">{tile.name}</span>
+              <span className="tile-name">{leninizeText(tile.name, game.rulesetMode)}</span>
               {(tile.kind === 'property' || tile.kind === 'railroad') && (
                 <span className="tile-price">₽{tile.price}</span>
               )}
@@ -417,7 +418,10 @@ function Board({ room, roomCode, playerId, game }: BoardProps) {
 
       {openTileId !== null && (
         <BoardPopup tileId={openTileId} onDismiss={() => setOpenTileId(null)}>
-          {BOARD.find((t) => t.id === openTileId)?.name}
+          {(() => {
+            const name = BOARD.find((t) => t.id === openTileId)?.name;
+            return name ? leninizeText(name, game.rulesetMode) : null;
+          })()}
           {(() => {
             const tile = BOARD.find((t) => t.id === openTileId);
             return tile ? (
