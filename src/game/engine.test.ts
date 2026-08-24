@@ -113,6 +113,37 @@ describe('rollDice', () => {
     expect(state.players.p1.roubles).toBe(1000 - 50);
   });
 
+  it('Lenin mode: passing GO pays out 200 like real Monopoly, no fee', () => {
+    let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 = 41 -> wraps to 1
+    state = rollDice(state);
+    expect(state.players.p1.position).toBe(1);
+    expect(state.players.p1.roubles).toBe(1000 + 200); // no fee, just the payout
+  });
+
+  it("Lenin mode: the hoarding-limit house rule doesn't apply - going over 1000 isn't jailed", () => {
+    let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 1]); // 38 + 2 = 40 -> wraps to 0, lands exactly on GO
+    state = rollDice(state);
+
+    expect(state.players.p1.position).toBe(0);
+    expect(state.players.p1.roubles).toBe(1000 + 200); // over 1000, but not jailed for it
+    expect(state.players.p1.inJail).toBe(false);
+  });
+
+  it('Stalin mode is unaffected - still jails for hoarding over 1000', () => {
+    let state = createInitialGameState(PLAYERS); // stalin (default)
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 900 } } };
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 1]); // 38 + 2 -> lands exactly on STOY, +200 = 1100
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1100);
+    expect(state.players.p1.inJail).toBe(true);
+  });
+
   it('flags doubles so the same player can roll again', () => {
     let state = createInitialGameState(PLAYERS);
     state = devSetForcedRoll(state, [4, 4]);

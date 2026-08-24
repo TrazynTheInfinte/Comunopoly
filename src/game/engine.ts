@@ -517,11 +517,23 @@ function giveRoubles(
   return applyRoublesJailRules(next, playerId);
 }
 
-/** House rules: hoarding over 1000 roubles, or running completely out (down to 0), both send you straight to jail. Also used directly by the Dev Panel's "set roubles" tool, so a manually-set balance can't leave the game in a state these rules wouldn't otherwise allow. No-op if already in jail - there's nothing further to do there. */
+/**
+ * House rules: hoarding over 1000 roubles, or running completely out
+ * (down to 0), both send you straight to jail. Also used directly by
+ * the Dev Panel's "set roubles" tool, so a manually-set balance can't
+ * leave the game in a state these rules wouldn't otherwise allow.
+ * No-op if already in jail - there's nothing further to do there.
+ *
+ * The hoarding half is Stalin-only: Lenin mode's whole point was
+ * solving for a lack of money (see moveAndResolve's Lenin-mode GO
+ * handling), so a rule that jails you for having *too much* would work
+ * directly against that - especially once GO itself pays out
+ * unconditionally there. Destitution still applies in both modes.
+ */
 function applyRoublesJailRules(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
   if (player.inJail) return state;
-  if (player.roubles > OVER_ROUBLES_JAIL_LIMIT) {
+  if (state.rulesetMode !== 'lenin' && player.roubles > OVER_ROUBLES_JAIL_LIMIT) {
     return logEvent(
       sendToJail(state, playerId),
       `Amassed over ${OVER_ROUBLES_JAIL_LIMIT} roubles - sent to jail!`,
@@ -534,9 +546,11 @@ function applyRoublesJailRules(state: GameState, playerId: string): GameState {
 }
 
 /** House rules: you can't leave jail (by any means - doubles, Denounce Your Collaborators, a Show Trial release) while over 1000 roubles or down to 0; either sends you straight back in instead. */
+/** The other half of the hoarding house rule (see applyRoublesJailRules) - Stalin-only for the same reason, so a well-off Lenin-mode player who ends up in jail some unrelated way (Go To Jail, a card, NKVD) isn't stuck there just for having done well. */
 function canLeaveJail(state: GameState, playerId: string): boolean {
   const roubles = state.players[playerId].roubles;
-  return roubles > 0 && roubles <= OVER_ROUBLES_JAIL_LIMIT;
+  if (roubles <= 0) return false;
+  return state.rulesetMode === 'lenin' || roubles <= OVER_ROUBLES_JAIL_LIMIT;
 }
 
 function payRoubles(
@@ -1741,9 +1755,11 @@ function moveAndResolve(
     ? player.position - steps
     : player.position + steps;
   const newPosition = ((rawNewPosition % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
-  // Landing exactly on STOY pays out; merely passing through it (wrapping
-  // past it in either direction) costs a fee instead - the reverse of
-  // regular Monopoly's "Go," per the source rules.
+  // Stalin mode: landing exactly on STOY pays out; merely passing
+  // through it (wrapping past it in either direction) costs a fee
+  // instead - the reverse of regular Monopoly's "Go," per the source
+  // rules. Lenin mode restores the real rule (see below, once we know
+  // whether this move actually reached it either way).
   const wrapped = rawNewPosition >= BOARD_SIZE || rawNewPosition < 0;
   const passedStoy = wrapped && newPosition !== 0;
   const landedOnStoy = newPosition === 0;
@@ -1797,24 +1813,38 @@ function moveAndResolve(
     next = logEvent(next, 'No longer blacklisted - you can buy and collect rent again.');
   }
 
-  // Iron's power: never has to pay the bribe to pass STOY.
-  if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
-    if (!canAfford(next, playerId, STOY_PASS_FEE)) {
-      return jailForInsolvency(
+  if (state.rulesetMode === 'lenin') {
+    // Classic Monopoly's actual Go: passing or landing both just pay
+    // out, no fee either way. Lenin mode's whole point was solving for
+    // a lack of money (real bankruptcy makes cash flow matter far more
+    // than it does in Stalin mode) - a tax for merely passing GO works
+    // directly against that, so it doesn't apply here. Iron's power
+    // (never pays the STOY pass fee) simply has nothing to waive in
+    // this mode - the Piece is unchanged, there's just no fee to skip.
+    if (passedStoy || landedOnStoy) {
+      next = giveRoubles(next, playerId, STOY_LANDING_BONUS);
+      next = logEvent(next, `Collected ${STOY_LANDING_BONUS} roubles for passing STOY.`);
+    }
+  } else {
+    // Iron's power: never has to pay the bribe to pass STOY.
+    if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
+      if (!canAfford(next, playerId, STOY_PASS_FEE)) {
+        return jailForInsolvency(
+          next,
+          playerId,
+          `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
+        );
+      }
+      next = payRoubles(next, playerId, STOY_PASS_FEE);
+      next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
+    }
+    if (landedOnStoy) {
+      next = giveRoubles(next, playerId, STOY_LANDING_BONUS);
+      next = logEvent(
         next,
-        playerId,
-        `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
+        `Collected ${STOY_LANDING_BONUS} roubles for landing on STOY.`,
       );
     }
-    next = payRoubles(next, playerId, STOY_PASS_FEE);
-    next = logEvent(next, `Paid ${STOY_PASS_FEE} roubles passing STOY.`);
-  }
-  if (landedOnStoy) {
-    next = giveRoubles(next, playerId, STOY_LANDING_BONUS);
-    next = logEvent(
-      next,
-      `Collected ${STOY_LANDING_BONUS} roubles for landing on STOY.`,
-    );
   }
 
   // Go Into Hiding: landing exactly on someone else's hiding spot finds

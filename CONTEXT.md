@@ -24,7 +24,7 @@ Lenin Communism only. The real "lose" state, replacing Disappear's "pick a new P
 _Avoid_: Disappear (a materially different consequence - no new Piece, no return to play)
 
 **Insolvency Bailout**:
-Lenin Communism only. What happens on a player's very next roll after being jailed for an unpayable debt (rent, a STOY fee, a toll, an unaffordable Fine): rolling doubles escapes jail and pays out a 100-Rouble bailout; anything else is immediate Bankruptcy. A one-shot exception to jail's normal multi-attempt escape rules, used only for this specific kind of jailing.
+Lenin Communism only. What happens on a player's very next roll after being jailed for an unpayable debt (rent, a toll, an unaffordable Fine - not a STOY/GO fee, which doesn't exist in Lenin mode): rolling doubles escapes jail and pays out a 100-Rouble bailout; anything else is immediate Bankruptcy. A one-shot exception to jail's normal multi-attempt escape rules, used only for this specific kind of jailing.
 
 **Liquidation Choice**:
 Lenin Communism only. The one Disappear trigger that doesn't become a flat Fine: failing to afford the jail Bribe. The player is offered the choice of selling houses/mortgaging properties to try to cover it (or declaring Bankruptcy outright instead) - real Monopoly liquidation, rather than a Fine they may not be able to pay either.
@@ -49,7 +49,7 @@ The act of the State confiscating assets, either from a Disappearing player or v
 The 100-Rouble payment a jailed player must make at the end of each of their turns to avoid Disappearing. Distinct from rolling doubles, which is how a player leaves jail outright.
 
 **Hoarding Limit**:
-House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead. Mirrored at the bottom end by Destitute: hitting exactly 0 Roubles (even via a payment they could afford) has the same jailing/no-leaving-jail effect.
+Stalin Communism only. House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead. Mirrored at the bottom end by Destitute: hitting exactly 0 Roubles (even via a payment they could afford) has the same jailing/no-leaving-jail effect. Lenin Communism drops the over-1000 half entirely (Destitute still applies in both) — accumulating Roubles is the whole point of solving Lenin mode's "lack of money" problem, so a rule that jails you for having *too much* would work against that.
 
 **Repeat Doubles**:
 House rule: a player who rolls doubles three times total is sent to jail instead of moving on that third roll. Unlike classic Monopoly, these three doubles don't need to be consecutive or within the same turn — the count only resets when it actually triggers this jailing, or when the player Disappears. Every other route to jail (the Go To Jail tile, cards, NKVD, The Kremlin, etc.) leaves the count untouched.
@@ -98,7 +98,7 @@ A Piece's protected Rouble stash, seeded by Smuggling. Safe from being taken by 
 _Avoid_: stash, savings, off-shore account
 
 **STOY**:
-The renamed Go tile. Landing on it collects 200 Roubles; passing it costs 50 Roubles (a "bribe" to pass, distinct from the jail Bribe).
+Stalin Communism only. The renamed Go tile. Landing on it collects 200 Roubles; passing it costs 50 Roubles (a "bribe" to pass, distinct from the jail Bribe). Lenin Communism displays and plays this tile as GO instead - real Monopoly's actual rule (passing or landing both just pay out 200, no fee) rather than the inverted Stalin-mode version, and the display name changes too (see lib/leninText.ts) - solving Lenin mode's "lack of money" problem was the whole point.
 
 **The Kremlin**:
 The renamed Park Place tile ("Visit Stalin!"). First landing collects 200 Roubles; second landing sends the player to jail.
