@@ -3,8 +3,9 @@ import { db } from './firebase';
 import { STARTING_PIECES } from '../data/pieces';
 import { pickAvailablePiece } from './rooms';
 import type { CardDeck, GameState, PieceId } from '../types/game';
-import type { Room } from '../types/room';
+import type { Room, RulesetMode } from '../types/room';
 import {
+  acceptTrade,
   acceptVolgaOffer,
   accuseOfTrotsky,
   acknowledgeCard,
@@ -17,8 +18,11 @@ import {
   chooseCard,
   chooseEndgameTarget,
   chooseNewPiece,
+  confirmLiquidationPayment,
   confirmStillHere,
   createInitialGameState,
+  declareBankruptcy,
+  declineTrade,
   declineVolgaOffer,
   devDrawCard,
   devForceAutoPickPiece,
@@ -33,6 +37,7 @@ import {
   drawFromPile,
   endTurn,
   mortgageProperty,
+  proposeTrade,
   rejoinFromAfk,
   resolveCardTarget,
   resolveCatRedirect,
@@ -44,6 +49,7 @@ import {
   unmortgageProperty,
   useDenounceCollaborators,
   useSecretInformant,
+  withdrawTrade,
 } from '../game/engine';
 
 // Every function here follows the same shape: take the game state this
@@ -60,10 +66,11 @@ export async function startGame(
   roomCode: string,
   playerAssignments: { playerId: string; pieceId: PieceId }[],
   carryWestOnDisappear: boolean = false,
+  rulesetMode: RulesetMode = 'stalin',
 ) {
   await writeGameState(
     roomCode,
-    createInitialGameState(playerAssignments, Math.random, carryWestOnDisappear),
+    createInitialGameState(playerAssignments, Math.random, carryWestOnDisappear, rulesetMode),
   );
 }
 
@@ -102,7 +109,12 @@ export async function startNewMatch(roomCode: string, room: Room) {
   }
   await updateDoc(doc(db, 'rooms', roomCode), {
     mode: 'experienced',
-    game: createInitialGameState(assignments, Math.random, room.carryWestOnDisappear ?? false),
+    game: createInitialGameState(
+      assignments,
+      Math.random,
+      room.carryWestOnDisappear ?? false,
+      room.rulesetMode,
+    ),
   });
 }
 
@@ -277,6 +289,44 @@ export async function unmortgagePropertyAndSync(
   tileId: number,
 ) {
   await writeGameState(roomCode, unmortgageProperty(game, playerId, tileId));
+}
+
+/** Lenin mode: pays off a pending liquidationChoice's jail bribe, if selling/mortgaging (sellHouseAndSync/mortgagePropertyAndSync above) has raised enough since it opened. */
+export async function confirmLiquidationPaymentAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, confirmLiquidationPayment(game));
+}
+
+/** Lenin mode: gives up on a pending liquidationChoice rather than keep selling/mortgaging - real bankruptcy. */
+export async function declareBankruptcyAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, declareBankruptcy(game));
+}
+
+// --- Trading (both modes) --------------------------------------------------
+
+export async function proposeTradeAndSync(
+  roomCode: string,
+  game: GameState,
+  fromPlayerId: string,
+  toPlayerId: string,
+  offer: { tileIds: number[]; roubles: number },
+  request: { tileIds: number[]; roubles: number },
+) {
+  await writeGameState(
+    roomCode,
+    proposeTrade(game, crypto.randomUUID(), fromPlayerId, toPlayerId, offer, request),
+  );
+}
+
+export async function acceptTradeAndSync(roomCode: string, game: GameState, tradeId: string) {
+  await writeGameState(roomCode, acceptTrade(game, tradeId));
+}
+
+export async function declineTradeAndSync(roomCode: string, game: GameState, tradeId: string) {
+  await writeGameState(roomCode, declineTrade(game, tradeId));
+}
+
+export async function withdrawTradeAndSync(roomCode: string, game: GameState, tradeId: string) {
+  await writeGameState(roomCode, withdrawTrade(game, tradeId));
 }
 
 export async function resolveSmuggleOfferAndSync(roomCode: string, game: GameState, amount: number) {

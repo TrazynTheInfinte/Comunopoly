@@ -6,7 +6,7 @@ import {
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
 import { STARTING_PIECES } from '../data/pieces';
-import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId } from '../types/game';
+import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId, RulesetMode, TradeOffer } from '../types/game';
 
 const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
 
@@ -37,6 +37,26 @@ const STARTING_HOTELS = 12;
 const MORTGAGE_PAYOFF_MULTIPLIER = 1.1;
 const COLOR_GROUPS: ColorGroup[] = ['purple', 'lightBlue', 'pink', 'orange', 'red', 'yellow', 'green'];
 
+// Lenin mode: every trigger that would fully Disappear a player in
+// Stalin mode instead fines them this much (or jails them for
+// insolvency if they can't afford it - see handleDisappearTrigger).
+// Roughly scaled to how severe the original trigger felt; the biggest
+// (Trotsky) gets the steepest fine, per explicit request that it get
+// the same *treatment* as everything else, just not necessarily the
+// same size.
+const LENIN_FINE_NKVD = 300;
+const LENIN_FINE_GREAT_PURGE = 400;
+const LENIN_FINE_BESTSELLER = 250;
+const LENIN_FINE_ACCIDENT = 300;
+const LENIN_FINE_PHONE_CALL = 300;
+const LENIN_FINE_FREE_PARKING_CAUGHT = 200;
+const LENIN_FINE_HIDING_FOUND = 250;
+const LENIN_FINE_JAIL_ROLLED_A_ONE = 200;
+const LENIN_FINE_SHOW_TRIAL = 400;
+const LENIN_FINE_TROTSKY = 500;
+// The one-shot insolvency-jail bailout roll's payout - see resolveJailRoll.
+const LENIN_INSOLVENCY_BAILOUT = 100;
+
 function tileIdsInGroup(group: ColorGroup): number[] {
   return BOARD.filter((t) => t.kind === 'property' && t.colorGroup === group).map((t) => t.id);
 }
@@ -50,6 +70,7 @@ export function createInitialGameState(
   playerAssignments: { playerId: string; pieceId: PieceId }[],
   rng: () => number = Math.random,
   carryWestOnDisappear: boolean = false,
+  rulesetMode: RulesetMode = 'stalin',
 ): GameState {
   const players: Record<string, GamePlayerState> = {};
   for (const { playerId, pieceId } of playerAssignments) {
@@ -75,6 +96,7 @@ export function createInitialGameState(
       doublesRolledCount: 0,
       consecutiveAfkSkips: 0,
       isAfkSpectating: false,
+      jailedForInsolvency: false,
     };
   }
 
@@ -113,11 +135,15 @@ export function createInitialGameState(
     lastJailRedirect: null,
     lastDisappearedPlayerId: null,
     turnCount: 0,
+    rulesetMode,
+    leninWinnerId: null,
+    activeTrades: [],
   };
 
   // Degenerate edge case: a full 12-player room claims every Piece right
-  // at the start, with nothing left in the Pool from turn one.
-  return checkEndgameTrigger(initialState);
+  // at the start, with nothing left in the Pool from turn one. Lenin
+  // mode has no Piece Pool/Score endgame at all, so this never applies.
+  return rulesetMode === 'lenin' ? initialState : checkEndgameTrigger(initialState);
 }
 
 /** True once every one of the 12 Piece IDs is accounted for - either permanently retired, or currently held by an active player. That's the Piece Pool running dry, which is what starts the Endgame. */
@@ -137,6 +163,9 @@ function isPoolExhausted(state: GameState): boolean {
  * more turn, starting with whoever's turn it currently is.
  */
 function checkEndgameTrigger(state: GameState): GameState {
+  // Lenin mode's win condition is classic bankruptcy (see eliminatePlayer/
+  // leninWinnerId) - the Piece Pool/Score apparatus doesn't apply to it.
+  if (state.rulesetMode === 'lenin') return state;
   if (state.endgame || !isPoolExhausted(state)) return state;
 
   const activeIds = state.turnOrder.filter((id) => !state.players[id].isSpectating);
@@ -499,7 +528,7 @@ function applyRoublesJailRules(state: GameState, playerId: string): GameState {
     );
   }
   if (player.roubles <= 0) {
-    return logEvent(sendToJail(state, playerId), 'Down to 0 roubles - Destitute, sent to jail!');
+    return jailForInsolvency(state, playerId, 'Down to 0 roubles - Destitute, sent to jail!');
   }
   return state;
 }
@@ -651,6 +680,8 @@ function disappearPlayer(
     next = { ...next, pendingDecision: null };
   }
 
+  next = clearTradesInvolving(next, playerId);
+
   const pool = availablePieceIds(next, playerId);
   if (pool.length === 0) {
     next = {
@@ -671,6 +702,149 @@ function disappearPlayer(
 
   next = { ...next, pendingPieceChoices: [...next.pendingPieceChoices, playerId] };
   return logEvent(next, `Disappeared (${reason}). Choosing a new Piece.`);
+}
+
+/** Removes any trade offers this player is on either side of - called whenever they Disappear or are eliminated, so a stale trade never dangles referencing a player who can no longer honor it. */
+function clearTradesInvolving(state: GameState, playerId: string): GameState {
+  const activeTrades = state.activeTrades.filter(
+    (t) => t.fromPlayerId !== playerId && t.toPlayerId !== playerId,
+  );
+  return activeTrades.length === state.activeTrades.length ? state : { ...state, activeTrades };
+}
+
+/**
+ * Lenin mode's actual "you lose" consequence - classic Monopoly
+ * bankruptcy. Unlike disappearPlayer, there's no new Piece to pick:
+ * this player is marked isSpectating permanently (reusing the exact
+ * same field/semantics Stalin mode uses for "permanently out, skipped
+ * in turn order forever"), their properties/houses return to the bank
+ * the same way disappearPlayer's do, and their Roubles are just gone -
+ * always to the bank, never to a specific creditor, since most of
+ * Lenin mode's own bankruptcy triggers (fines, the insolvency bailout
+ * roll, the jail bribe) aren't owed to a specific player anyway. Once
+ * only one non-spectating player is left in turnOrder, the match is
+ * over - see leninWinnerId.
+ */
+function eliminatePlayer(state: GameState, playerId: string, reason: string): GameState {
+  const player = state.players[playerId];
+
+  let propertyHouses = state.propertyHouses;
+  let housesRemaining = state.housesRemaining;
+  let hotelsRemaining = state.hotelsRemaining;
+  for (const tileId of player.ownedTileIds) {
+    const count = propertyHouses[tileId] ?? 0;
+    if (count === 0) continue;
+    if (count === 5) {
+      hotelsRemaining += 1;
+    } else {
+      housesRemaining += count;
+    }
+    propertyHouses = { ...propertyHouses, [tileId]: 0 };
+  }
+  const mortgagedTileIds = state.mortgagedTileIds.filter((id) => !player.ownedTileIds.includes(id));
+
+  let next: GameState = {
+    ...state,
+    propertyHouses,
+    housesRemaining,
+    hotelsRemaining,
+    mortgagedTileIds,
+    players: {
+      ...state.players,
+      [playerId]: {
+        ...player,
+        roubles: 0,
+        ownedTileIds: [],
+        inJail: false,
+        jailedForInsolvency: false,
+        blacklisted: false,
+        hidingPosition: null,
+        heldCardIds: [],
+        isTrotsky: false,
+        westRoubles: 0,
+        pendingWestRoubles: 0,
+        isSpectating: true,
+      },
+    },
+  };
+
+  if (next.commissarPlayerId === playerId) {
+    next = { ...next, commissarPlayerId: null, closedTileIds: [] };
+  }
+  if (next.activeVote && (next.activeVote.callerId === playerId || next.activeVote.targetPlayerId === playerId)) {
+    next = { ...next, activeVote: null };
+  }
+  if (
+    next.rubberDuckEncounter &&
+    (next.rubberDuckEncounter.rubberDuckPlayerId === playerId ||
+      next.rubberDuckEncounter.targetPlayerId === playerId)
+  ) {
+    next = { ...next, rubberDuckEncounter: null };
+  }
+  if (player.isTrotsky && next.trotskyHidingSpot !== null) {
+    next = { ...next, trotskyHidingSpot: null };
+    next = logEvent(next, 'Fourth International: Trotsky was eliminated before being caught - the hunt is off.');
+  }
+  if (
+    next.pendingDecision &&
+    'forPlayerId' in next.pendingDecision &&
+    next.pendingDecision.forPlayerId === playerId
+  ) {
+    next = { ...next, pendingDecision: null };
+  }
+  next = clearTradesInvolving(next, playerId);
+
+  next = logEvent(next, `Bankrupt (${reason}) - eliminated from the game.`);
+
+  const remaining = next.turnOrder.filter((id) => !next.players[id].isSpectating);
+  if (remaining.length === 1 && !next.leninWinnerId) {
+    next = { ...next, leninWinnerId: remaining[0] };
+    next = logEvent(next, `${remaining[0]} is the last one standing - wins the game!`);
+  }
+
+  return next;
+}
+
+/**
+ * Every current Disappear trigger in Stalin mode - a fitting money fine
+ * in Lenin mode instead (see the LENIN_FINE_* constants), since a full
+ * asset wipe + new Piece doesn't make sense without the Piece Pool.
+ * chargeJailBribe, devForceDisappear, and devKickPlayer intentionally
+ * don't go through this: the jail bribe gets its own liquidation-choice
+ * handling, and the two dev-panel tools always do a real Disappear
+ * regardless of mode (they're host debug overrides, not organic
+ * triggers).
+ */
+function handleDisappearTrigger(state: GameState, playerId: string, reason: string, leninFine: number): GameState {
+  if (state.rulesetMode !== 'lenin') return disappearPlayer(state, playerId, reason);
+  return chargeLeninFine(state, playerId, leninFine, reason);
+}
+
+function chargeLeninFine(state: GameState, playerId: string, amount: number, reason: string): GameState {
+  if (canAfford(state, playerId, amount)) {
+    return logEvent(payRoubles(state, playerId, amount), `Fined ${amount} roubles (${reason}).`);
+  }
+  return jailForInsolvency(state, playerId, `Couldn't afford the ${amount} rouble fine (${reason}) - Destitute, sent to jail.`);
+}
+
+/**
+ * Sends a player to jail for being unable to afford a debt - same
+ * "Destitute" framing as always, but in Lenin mode also flags them
+ * jailedForInsolvency, which changes what their very next roll does
+ * (see resolveJailRoll: a one-shot doubles-for-a-bailout-or-eliminated
+ * roll, replacing jail's normal multi-attempt escape rules just for
+ * this case).
+ */
+function jailForInsolvency(state: GameState, playerId: string, message: string): GameState {
+  const jailed = sendToJail(state, playerId);
+  const next: GameState =
+    state.rulesetMode === 'lenin'
+      ? {
+          ...jailed,
+          players: { ...jailed.players, [playerId]: { ...jailed.players[playerId], jailedForInsolvency: true } },
+        }
+      : jailed;
+  return logEvent(next, message);
 }
 
 /** Every Piece ID not currently held by another active player and not permanently retired - what `playerId` can pick from right now. */
@@ -888,7 +1062,7 @@ function resolveNkvdLanding(state: GameState, playerId: string): GameState {
   if (cycle === 2) {
     return logEvent(sendToJail(next, playerId), 'NKVD HQ sent you to jail.');
   }
-  return disappearPlayer(next, playerId, 'disappeared at NKVD HQ after repeated visits');
+  return handleDisappearTrigger(next, playerId, 'disappeared at NKVD HQ after repeated visits', LENIN_FINE_NKVD);
 }
 
 // --- Card effect helpers -------------------------------------------------
@@ -1036,7 +1210,12 @@ function greatPurgeEffect(state: GameState, _playerId: string, rng: () => number
   next = logEvent(next, 'The Great Purge: everyone loses half their tradeable properties.');
 
   const loserId = next.turnOrder[Math.floor(rng() * next.turnOrder.length)];
-  return disappearPlayer(next, loserId, 'lost the Great Purge (randomly chosen in place of rock-paper-scissors)');
+  return handleDisappearTrigger(
+    next,
+    loserId,
+    'lost the Great Purge (randomly chosen in place of rock-paper-scissors)',
+    LENIN_FINE_GREAT_PURGE,
+  );
 }
 
 /**
@@ -1053,7 +1232,7 @@ function bestsellerEffect(state: GameState, playerId: string, rng: () => number)
     return logEvent(next, `Rolled a ${roll} - burned the evidence and denied everything. Kept the 500 roubles.`);
   }
   if (roll === 1) {
-    return disappearPlayer(next, playerId, 'rolled a 1 trying to cover up the bestseller');
+    return handleDisappearTrigger(next, playerId, 'rolled a 1 trying to cover up the bestseller', LENIN_FINE_BESTSELLER);
   }
 
   const tradeable = next.players[playerId].ownedTileIds.filter((t) => isTradeable(next, t));
@@ -1099,7 +1278,7 @@ const CARD_EFFECTS: Record<
   (state: GameState, playerId: string, rng: () => number) => GameState
 > = {
   bankError: (state, playerId) => giveRoubles(state, playerId, 1000),
-  accident: (state, playerId) => disappearPlayer(state, playerId, 'an "accident"'),
+  accident: (state, playerId) => handleDisappearTrigger(state, playerId, 'an "accident"', LENIN_FINE_ACCIDENT),
   antiRevisionist: (state, playerId) => {
     const player = state.players[playerId];
     return { ...state, players: { ...state.players, [playerId]: { ...player, turnsToSkip: 1 } } };
@@ -1239,7 +1418,7 @@ function applyCardEffectsFor(
   if (cardId === 'phoneCallFromStalin') {
     const roll = rollOneDie(rng);
     if (roll === 1) {
-      next = disappearPlayer(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`);
+      next = handleDisappearTrigger(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`, LENIN_FINE_PHONE_CALL);
       return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
     }
     next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
@@ -1332,8 +1511,9 @@ function resolveLanding(
   // an unclosed one just by landing on it, instead of its normal effect.
   if (state.closedTileIds.includes(position) && playerId !== state.commissarPlayerId) {
     if (!canAfford(state, playerId, TELEGRAPH_UNION_TOLL)) {
-      return logEvent(
-        sendToJail(state, playerId),
+      return jailForInsolvency(
+        state,
+        playerId,
         `Couldn't afford the ${TELEGRAPH_UNION_TOLL} rouble toll on ${tile.name} - Destitute, sent to jail.`,
       );
     }
@@ -1440,8 +1620,9 @@ function resolveLanding(
             : tile.rentTable[state.propertyHouses[tile.id] ?? 0];
 
         if (!canAfford(state, playerId, rent)) {
-          return logEvent(
-            sendToJail(state, playerId),
+          return jailForInsolvency(
+            state,
+            playerId,
             `Couldn't afford ${rent} roubles rent on ${tile.name} - Destitute, sent to jail.`,
           );
         }
@@ -1513,7 +1694,7 @@ function resolveFreeParkingLanding(state: GameState, playerId: string): GameStat
       next,
       `Caught ${pending} roubles waiting at Free Parking - it never made it to the West.`,
     );
-    next = disappearPlayer(next, otherId, 'got caught smuggling to the West');
+    next = handleDisappearTrigger(next, otherId, 'got caught smuggling to the West', LENIN_FINE_FREE_PARKING_CAUGHT);
   }
 
   const secured = next.players[playerId].pendingWestRoubles;
@@ -1619,8 +1800,9 @@ function moveAndResolve(
   // Iron's power: never has to pay the bribe to pass STOY.
   if (passedStoy && !options.waiveStoyFee && player.pieceId !== 'iron') {
     if (!canAfford(next, playerId, STOY_PASS_FEE)) {
-      return logEvent(
-        sendToJail(next, playerId),
+      return jailForInsolvency(
+        next,
+        playerId,
         `Couldn't afford the ${STOY_PASS_FEE} rouble STOY pass fee - Destitute, sent to jail.`,
       );
     }
@@ -1639,7 +1821,7 @@ function moveAndResolve(
   // them out - they Disappear early.
   for (const [otherId, otherPlayer] of Object.entries(next.players)) {
     if (otherId !== playerId && otherPlayer.hidingPosition === newPosition) {
-      next = disappearPlayer(next, otherId, 'found while hiding');
+      next = handleDisappearTrigger(next, otherId, 'found while hiding', LENIN_FINE_HIDING_FOUND);
     }
   }
 
@@ -1665,7 +1847,12 @@ function moveAndResolve(
   const trap = next.phoneCallTraps.find((t) => t.tileId === newPosition && t.playerId === playerId);
   if (trap) {
     next = { ...next, phoneCallTraps: next.phoneCallTraps.filter((t) => t !== trap) };
-    return disappearPlayer(next, playerId, 'landed back on a Phone Call from Stalin property');
+    return handleDisappearTrigger(
+      next,
+      playerId,
+      'landed back on a Phone Call from Stalin property',
+      LENIN_FINE_PHONE_CALL,
+    );
   }
 
   return resolveLanding(next, playerId, newPosition, rng);
@@ -1689,6 +1876,34 @@ function resolveJailRoll(
   // rules entirely - "except while in jail," per the source rules.
   const next: GameState = { ...state, lastRollWasDoubles: false };
 
+  // Lenin mode: jailed for an unpayable debt, not the normal multi-
+  // attempt jail rules - this one roll settles it. Doubles is a
+  // one-time bailout (escape + a small cash injection); anything else
+  // is real bankruptcy, on the spot.
+  if (next.players[playerId].jailedForInsolvency) {
+    const cleared = { ...next.players[playerId], jailedForInsolvency: false };
+    if (isDoubles) {
+      const escaped: GameState = {
+        ...next,
+        players: { ...next.players, [playerId]: { ...cleared, inJail: false } },
+      };
+      return moveAndResolve(
+        logEvent(
+          giveRoubles(escaped, playerId, LENIN_INSOLVENCY_BAILOUT),
+          `Rolled doubles - escaped jail and got a ${LENIN_INSOLVENCY_BAILOUT} rouble bailout!`,
+        ),
+        playerId,
+        steps,
+        rng,
+      );
+    }
+    return eliminatePlayer(
+      { ...next, players: { ...next.players, [playerId]: cleared } },
+      playerId,
+      'failed the insolvency bailout roll',
+    );
+  }
+
   if (isDoubles) {
     if (!canLeaveJail(next, playerId)) {
       return logEvent(next, "Rolled doubles, but your roubles don't allow leaving jail - stayed locked up.");
@@ -1709,7 +1924,7 @@ function resolveJailRoll(
   }
 
   if (die1 === 1 || die2 === 1) {
-    return disappearPlayer(next, playerId, 'rolled a 1 in jail');
+    return handleDisappearTrigger(next, playerId, 'rolled a 1 in jail', LENIN_FINE_JAIL_ROLLED_A_ONE);
   }
 
   return logEvent(next, 'Failed to roll doubles - still in jail.');
@@ -2034,7 +2249,7 @@ function resolveShowTrialVote(state: GameState, rng: () => number): GameState {
 
   const next: GameState = { ...state, activeVote: null };
   if (verdict === 'disappear') {
-    return disappearPlayer(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote');
+    return handleDisappearTrigger(next, activeVote.targetPlayerId, 'Disappeared by a Show Trial vote', LENIN_FINE_SHOW_TRIAL);
   }
   if (!canLeaveJail(next, activeVote.targetPlayerId)) {
     return logEvent(next, "Voted to release, but their roubles don't allow it - sent straight back to jail.");
@@ -2266,6 +2481,117 @@ export function unmortgageProperty(state: GameState, playerId: string, tileId: n
   return logEvent(next, `Paid off the mortgage on ${tile.name} for ${payoff} roubles.`);
 }
 
+// --- Trading (both modes) --------------------------------------------------
+//
+// A trade is proposed to a specific player and sits in activeTrades
+// until they accept/decline, or the proposer withdraws it - runs
+// independent of pendingDecision (like activeVote), since trading
+// isn't turn-gated and shouldn't block or be blocked by whatever else
+// is pending. No counter-offers in this pass: accept or decline what's
+// actually on the table.
+
+/** Whether tileId can be part of a trade offer right now: playerId must actually own it, it can't have houses on it yet (sell those first), and it can't be exempt from ownership-transferring mechanics (Chernobyl Power, Siege of Stalingrad's lock). */
+function canIncludeInTrade(state: GameState, playerId: string, tileId: number): boolean {
+  const player = state.players[playerId];
+  if (!player.ownedTileIds.includes(tileId)) return false;
+  if ((state.propertyHouses[tileId] ?? 0) > 0) return false;
+  return isTradeable(state, tileId);
+}
+
+/**
+ * Proposes a trade to another player. `id` is generated by the caller
+ * (a real UUID from the client, same as player IDs) rather than in
+ * here - engine.ts stays a pure function of its inputs, no hidden
+ * randomness. A no-op (nothing added) if either side's offer isn't
+ * currently valid; the same validity check runs again at accept time,
+ * since things can change in between.
+ */
+export function proposeTrade(
+  state: GameState,
+  id: string,
+  fromPlayerId: string,
+  toPlayerId: string,
+  offer: { tileIds: number[]; roubles: number },
+  request: { tileIds: number[]; roubles: number },
+): GameState {
+  if (fromPlayerId === toPlayerId) return state;
+  if (!state.players[fromPlayerId] || !state.players[toPlayerId]) return state;
+  if (offer.roubles < 0 || request.roubles < 0) return state;
+  if (offer.tileIds.length === 0 && offer.roubles === 0 && request.tileIds.length === 0 && request.roubles === 0) {
+    return state; // nothing actually on the table
+  }
+  if (offer.tileIds.some((t) => !canIncludeInTrade(state, fromPlayerId, t))) return state;
+  if (request.tileIds.some((t) => !canIncludeInTrade(state, toPlayerId, t))) return state;
+  if (!canAfford(state, fromPlayerId, offer.roubles) || !canAfford(state, toPlayerId, request.roubles)) return state;
+
+  const trade: TradeOffer = {
+    id,
+    fromPlayerId,
+    toPlayerId,
+    offerTileIds: offer.tileIds,
+    offerRoubles: offer.roubles,
+    requestTileIds: request.tileIds,
+    requestRoubles: request.roubles,
+  };
+  return logEvent({ ...state, activeTrades: [...state.activeTrades, trade] }, `Proposed a trade to ${toPlayerId}.`);
+}
+
+/** The recipient accepts a pending trade - re-validates both sides still actually have what's listed (a no-op with a log message, not a crash, if something changed since it was proposed), then swaps everything at once. */
+export function acceptTrade(state: GameState, tradeId: string): GameState {
+  const trade = state.activeTrades.find((t) => t.id === tradeId);
+  if (!trade) return state;
+
+  const withoutTrade: GameState = {
+    ...state,
+    activeTrades: state.activeTrades.filter((t) => t.id !== tradeId),
+  };
+
+  const stillValid =
+    trade.offerTileIds.every((t) => canIncludeInTrade(state, trade.fromPlayerId, t)) &&
+    trade.requestTileIds.every((t) => canIncludeInTrade(state, trade.toPlayerId, t)) &&
+    canAfford(state, trade.fromPlayerId, trade.offerRoubles) &&
+    canAfford(state, trade.toPlayerId, trade.requestRoubles);
+
+  if (!stillValid) {
+    return logEvent(withoutTrade, 'A trade offer fell through - something changed since it was proposed.');
+  }
+
+  let next = withoutTrade;
+  for (const tileId of trade.offerTileIds) {
+    next = transferTileOwnership(next, tileId, trade.fromPlayerId, trade.toPlayerId);
+  }
+  for (const tileId of trade.requestTileIds) {
+    next = transferTileOwnership(next, tileId, trade.toPlayerId, trade.fromPlayerId);
+  }
+  if (trade.offerRoubles > 0) {
+    next = giveRoubles(payRoubles(next, trade.fromPlayerId, trade.offerRoubles), trade.toPlayerId, trade.offerRoubles);
+  }
+  if (trade.requestRoubles > 0) {
+    next = giveRoubles(payRoubles(next, trade.toPlayerId, trade.requestRoubles), trade.fromPlayerId, trade.requestRoubles);
+  }
+  return logEvent(next, `Trade completed between ${trade.fromPlayerId} and ${trade.toPlayerId}.`);
+}
+
+/** The recipient turns down a pending trade. */
+export function declineTrade(state: GameState, tradeId: string): GameState {
+  const trade = state.activeTrades.find((t) => t.id === tradeId);
+  if (!trade) return state;
+  return logEvent(
+    { ...state, activeTrades: state.activeTrades.filter((t) => t.id !== tradeId) },
+    `${trade.toPlayerId} declined a trade offer from ${trade.fromPlayerId}.`,
+  );
+}
+
+/** The proposer pulls back a trade they offered, before the recipient has acted on it. */
+export function withdrawTrade(state: GameState, tradeId: string): GameState {
+  const trade = state.activeTrades.find((t) => t.id === tradeId);
+  if (!trade) return state;
+  return logEvent(
+    { ...state, activeTrades: state.activeTrades.filter((t) => t.id !== tradeId) },
+    `${trade.fromPlayerId} withdrew a trade offer to ${trade.toPlayerId}.`,
+  );
+}
+
 /**
  * Accuses a player of being Trotsky (Fourth International) - a house
  * rule variant requested in place of the source card's literal (and
@@ -2290,7 +2616,7 @@ export function accuseOfTrotsky(state: GameState, accusedId: string): GameState 
   }
 
   if (wasTrotsky) {
-    return disappearPlayer(next, accusedId, 'was correctly accused of being Trotsky');
+    return handleDisappearTrigger(next, accusedId, 'was correctly accused of being Trotsky', LENIN_FINE_TROTSKY);
   }
   return logEvent(sendToJail(next, playerId), 'The accusation was wrong - sent to jail.');
 }
@@ -2317,9 +2643,28 @@ export function endTurn(state: GameState): GameState {
   }
 
   const endingPlayerId = currentPlayerId(state);
-  let next = state.players[endingPlayerId].inJail
+  const next = state.players[endingPlayerId].inJail
     ? chargeJailBribe(state, endingPlayerId)
     : state;
+
+  // Lenin mode: couldn't afford the bribe, but has something left to
+  // liquidate - chargeJailBribe opened a liquidationChoice decision
+  // instead of resolving outright. Stop here; the turn isn't actually
+  // over until confirmLiquidationPayment/declareBankruptcy runs (both
+  // call finishEndTurn themselves once that's settled).
+  if (next.pendingDecision) return next;
+
+  return finishEndTurn(next, endingPlayerId);
+}
+
+/**
+ * The rest of ending a turn, once any jail-bribe liquidation choice is
+ * settled (or was never needed) - shared by endTurn itself and by
+ * confirmLiquidationPayment/declareBankruptcy, which both need to
+ * finish advancing the turn they interrupted.
+ */
+function finishEndTurn(state: GameState, endingPlayerId: string): GameState {
+  let next = state;
 
   // Rubber duck's jail-offer lapses (implicitly "no") if their turn ends
   // without acting on it.
@@ -2346,7 +2691,9 @@ export function endTurn(state: GameState): GameState {
   // Endgame's final lap: this player's turn is genuinely over now (not
   // just paused for more Party Vanguard turns), so their "one more turn"
   // is done. If that was the last one owed, this may kick straight into
-  // target-choices or, if no Piece needs one, Scores themselves.
+  // target-choices or, if no Piece needs one, Scores themselves. Lenin
+  // mode never sets endgame at all (see checkEndgameTrigger), so this
+  // is always a no-op there.
   next = removeFromFinalLap(next, endingPlayerId);
   if (next.endgame?.results) {
     return { ...next, lastRoll: null, lastRollWasDoubles: false };
@@ -2364,21 +2711,63 @@ export function endTurn(state: GameState): GameState {
   };
 }
 
+/** Lenin mode: the jail-bribe liquidation choice is settled - either they can now afford it (this checks and pays), or this is a no-op if they still can't. */
+export function confirmLiquidationPayment(state: GameState): GameState {
+  if (state.pendingDecision?.type !== 'liquidationChoice') return state;
+  const { forPlayerId, amountOwed } = state.pendingDecision;
+  if (!canAfford(state, forPlayerId, amountOwed)) return state;
+
+  const paid: GameState = {
+    ...payRoubles(state, forPlayerId, amountOwed),
+    pendingDecision: null,
+  };
+  const next = logEvent(paid, `Paid the ${amountOwed} rouble jail bribe after selling/mortgaging to cover it.`);
+  return finishEndTurn(next, forPlayerId);
+}
+
+/** Lenin mode: the player facing a liquidationChoice gives up rather than keep selling/mortgaging - real bankruptcy. */
+export function declareBankruptcy(state: GameState): GameState {
+  if (state.pendingDecision?.type !== 'liquidationChoice') return state;
+  const { forPlayerId } = state.pendingDecision;
+  const next: GameState = { ...eliminatePlayer(state, forPlayerId, 'declared bankruptcy'), pendingDecision: null };
+  return finishEndTurn(next, forPlayerId);
+}
+
 /** Acknowledges a drawn card, letting the turn continue. Any automatic effect already applied at draw time - this just dismisses the card banner. */
 export function acknowledgeCard(state: GameState): GameState {
   if (state.pendingDecision?.type !== 'cardDrawn') return state;
   return { ...state, pendingDecision: null };
 }
 
+/** Any house/hotel to sell, or any unmortgaged property/railroad to mortgage - what determines whether a Lenin-mode player short on cash gets a liquidationChoice decision (something to actually try) or is eliminated outright (nothing left to sell). */
+function hasLiquidatableAssets(state: GameState, playerId: string): boolean {
+  const player = state.players[playerId];
+  const hasHouses = player.ownedTileIds.some((id) => (state.propertyHouses[id] ?? 0) > 0);
+  const hasMortgageable = player.ownedTileIds.some((id) => {
+    const tile = getTile(id);
+    return (tile.kind === 'property' || tile.kind === 'railroad') && !state.mortgagedTileIds.includes(id);
+  });
+  return hasHouses || hasMortgageable;
+}
+
 function chargeJailBribe(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
-  if (player.roubles < JAIL_BRIBE) {
-    return disappearPlayer(state, playerId, 'could not afford the jail bribe');
+  if (player.roubles >= JAIL_BRIBE) {
+    return logEvent(
+      payRoubles(state, playerId, JAIL_BRIBE),
+      `Paid the ${JAIL_BRIBE} rouble jail bribe.`,
+    );
   }
-  return logEvent(
-    payRoubles(state, playerId, JAIL_BRIBE),
-    `Paid the ${JAIL_BRIBE} rouble jail bribe.`,
-  );
+  if (state.rulesetMode === 'lenin') {
+    if (hasLiquidatableAssets(state, playerId)) {
+      return {
+        ...state,
+        pendingDecision: { type: 'liquidationChoice', forPlayerId: playerId, amountOwed: JAIL_BRIBE },
+      };
+    }
+    return eliminatePlayer(state, playerId, 'could not afford the jail bribe and had nothing left to sell');
+  }
+  return disappearPlayer(state, playerId, 'could not afford the jail bribe');
 }
 
 /**

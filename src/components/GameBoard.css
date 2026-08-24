@@ -282,6 +282,21 @@
   flex-wrap: wrap;
 }
 
+/* LiquidationChoicePrompt's house/mortgage lists - a labeled row of
+   small buttons, one per liquidatable tile. */
+.liquidation-choice-group {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.liquidation-choice-group .hint {
+  width: 100%;
+  margin: 0;
+}
+
 .card-prompt {
   flex-direction: column;
   align-items: flex-start;

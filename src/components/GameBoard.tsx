@@ -29,6 +29,8 @@ import EndgameResultsScreen from './EndgameResultsScreen';
 import EndgameTargetPrompt from './EndgameTargetPrompt';
 import FlyingCard from './FlyingCard';
 import Hand from './Hand';
+import LeninGameOverScreen from './LeninGameOverScreen';
+import LiquidationChoicePrompt from './LiquidationChoicePrompt';
 import NkvdQuizPrompt from './NkvdQuizPrompt';
 import NowPlayingBanner from './NowPlayingBanner';
 import PieceChoicePrompt from './PieceChoicePrompt';
@@ -37,6 +39,7 @@ import PropagandaAd from './PropagandaAd';
 import RubberDuckEncounterBanner from './RubberDuckEncounterBanner';
 import ShowTrialVoteBanner from './ShowTrialVoteBanner';
 import SmuggleOfferPrompt from './SmuggleOfferPrompt';
+import TradePanel from './TradePanel';
 import YourTurnBanner from './YourTurnBanner';
 import { useAfkSelfCheck } from './useAfkSelfCheck';
 import { useCardFlight } from './useCardFlight';
@@ -135,6 +138,9 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
 
   if (game.endgame?.results) {
     return <EndgameResultsScreen room={room} game={game} roomCode={roomCode} playerId={playerId} onLeave={onLeave} />;
+  }
+  if (game.rulesetMode === 'lenin' && game.leninWinnerId) {
+    return <LeninGameOverScreen room={room} game={game} roomCode={roomCode} playerId={playerId} onLeave={onLeave} />;
   }
 
   const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];
@@ -298,6 +304,8 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               );
             })}
           </ul>
+
+          {!me?.isSpectating && <TradePanel playerId={playerId} roomCode={roomCode} room={room} game={game} />}
         </section>
 
         <section className="layout-actions" ref={layoutActionsRef}>
@@ -453,6 +461,18 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
               <ActionModal>
                 <NkvdQuizPrompt
                   questionIndex={game.pendingDecision.questionIndex}
+                  roomCode={roomCode}
+                  game={game}
+                />
+              </ActionModal>
+            )}
+
+          {game.pendingDecision?.type === 'liquidationChoice' &&
+            game.pendingDecision.forPlayerId === playerId && (
+              <ActionModal>
+                <LiquidationChoicePrompt
+                  playerId={playerId}
+                  amountOwed={game.pendingDecision.amountOwed}
                   roomCode={roomCode}
                   game={game}
                 />

@@ -14,7 +14,7 @@ import {
 } from './lib/playerIdentity';
 import { wireAutoInitOnFirstInteraction } from './lib/sound';
 import { useVersionWatcher } from './lib/versionWatcher';
-import type { RoomMode } from './types/room';
+import type { RoomMode, RulesetMode } from './types/room';
 
 type View = 'landing' | 'name-entry' | 'lobby';
 type Mode = 'create' | 'join';
@@ -53,6 +53,7 @@ function App() {
   });
   const [mode, setMode] = useState<Mode>('join');
   const [roomMode, setRoomMode] = useState<RoomMode>('experienced');
+  const [rulesetMode, setRulesetMode] = useState<RulesetMode>('stalin');
   const [carryWestOnDisappear, setCarryWestOnDisappear] = useState(false);
   const [name, setName] = useState(() => getStoredName());
   const [roomCodeInput, setRoomCodeInput] = useState(() => getRoomCodeFromUrl() ?? '');
@@ -94,7 +95,7 @@ function App() {
 
       const roomCode =
         mode === 'create'
-          ? await createRoom(playerId, trimmedName, roomMode, carryWestOnDisappear)
+          ? await createRoom(playerId, trimmedName, roomMode, carryWestOnDisappear, rulesetMode)
           : await joinRoomAndReturnCode(roomCodeInput, trimmedName);
 
       storeName(trimmedName);
@@ -187,6 +188,30 @@ function App() {
 
           {mode === 'create' && (
             <fieldset className="room-mode-picker">
+              <legend>Game mode</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="rulesetMode"
+                  checked={rulesetMode === 'stalin'}
+                  onChange={() => setRulesetMode('stalin')}
+                />
+                Stalin Communism - the original game (Piece Pool, Scores, Disappearing)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="rulesetMode"
+                  checked={rulesetMode === 'lenin'}
+                  onChange={() => setRulesetMode('lenin')}
+                />
+                Lenin Communism - closer to classic Monopoly (bankruptcy, trading)
+              </label>
+            </fieldset>
+          )}
+
+          {mode === 'create' && (
+            <fieldset className="room-mode-picker">
               <legend>Piece assignment</legend>
               <label>
                 <input
@@ -209,7 +234,7 @@ function App() {
             </fieldset>
           )}
 
-          {mode === 'create' && (
+          {mode === 'create' && rulesetMode === 'stalin' && (
             <label className="carry-west-toggle">
               <input
                 type="checkbox"

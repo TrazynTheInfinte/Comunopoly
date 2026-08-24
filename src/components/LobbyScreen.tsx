@@ -41,7 +41,7 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
     const assignments = players
       .filter(([, player]) => player.pieceId !== null)
       .map(([id, player]) => ({ playerId: id, pieceId: player.pieceId! }));
-    void startGame(roomCode, assignments, room.carryWestOnDisappear ?? false);
+    void startGame(roomCode, assignments, room.carryWestOnDisappear ?? false, room.rulesetMode);
   }
 
   function handleCloseLobby() {
@@ -59,6 +59,9 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
       <p className="lobby-label">Room Code</p>
       <h1 className="lobby-code">{roomCode}</h1>
       <p className="lobby-hint">Send this code to your comrades.</p>
+      <p className="lobby-ruleset-badge">
+        {room.rulesetMode === 'lenin' ? 'Lenin Communism' : 'Stalin Communism'}
+      </p>
       <RoomQrCode roomCode={roomCode} />
 
       <ul className="player-list">

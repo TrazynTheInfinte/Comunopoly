@@ -11,7 +11,7 @@ import {
 import { db } from './firebase';
 import { STARTING_PIECES } from '../data/pieces';
 import type { PieceId } from '../types/game';
-import type { Room, RoomMode } from '../types/room';
+import type { Room, RoomMode, RulesetMode } from '../types/room';
 
 // Room Codes are typed by hand, so we stick to unambiguous uppercase
 // letters (no 0/O or 1/I mixups).
@@ -48,6 +48,7 @@ export async function createRoom(
   playerName: string,
   mode: RoomMode,
   carryWestOnDisappear: boolean = false,
+  rulesetMode: RulesetMode = 'stalin',
 ): Promise<string> {
   let lastError: unknown;
 
@@ -64,6 +65,7 @@ export async function createRoom(
         createdAt: serverTimestamp(),
         hostId: playerId,
         mode,
+        rulesetMode,
         carryWestOnDisappear,
         players: {
           [playerId]: { name: playerName, joinedAt: serverTimestamp(), pieceId },

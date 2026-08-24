@@ -33,6 +33,19 @@
   margin-bottom: 1rem;
 }
 
+.lobby-ruleset-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.75rem;
+  color: var(--color-red);
+  border: 2px solid var(--color-red);
+  padding: 0.2em 0.6em;
+  margin-bottom: 1rem;
+}
+
 .player-list {
   list-style: none;
   display: flex;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acceptTrade,
   acceptVolgaOffer,
   accuseOfTrotsky,
   acknowledgeCard,
@@ -12,8 +13,11 @@ import {
   chooseCard,
   chooseEndgameTarget,
   chooseNewPiece,
+  confirmLiquidationPayment,
   confirmStillHere,
   createInitialGameState,
+  declareBankruptcy,
+  declineTrade,
   declineVolgaOffer,
   devDrawCard,
   devForceAutoPickPiece,
@@ -29,6 +33,7 @@ import {
   endTurn,
   getAvailablePieceIds,
   mortgageProperty,
+  proposeTrade,
   rejoinFromAfk,
   resolveCardTarget,
   resolveCatRedirect,
@@ -40,6 +45,7 @@ import {
   unmortgageProperty,
   useDenounceCollaborators,
   useSecretInformant,
+  withdrawTrade,
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import { getTile } from '../data/board';
@@ -3567,5 +3573,320 @@ describe('AFK handling (useAfkSelfCheck / useHostAfkWatchdog)', () => {
     expect(state.players.p1.isAfkSpectating).toBe(false); // no longer just benched - this is permanent now
     expect(state.players.p1.roubles).toBe(1000); // seized, unlike a plain AFK bench
     expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+});
+
+describe('Lenin mode', () => {
+  it('createInitialGameState threads rulesetMode through, defaulting to stalin', () => {
+    expect(createInitialGameState(PLAYERS).rulesetMode).toBe('stalin');
+    expect(createInitialGameState(PLAYERS, Math.random, false, 'lenin').rulesetMode).toBe('lenin');
+  });
+
+  it('fines instead of Disappearing on a Stalin-mode Disappear trigger (NKVD repeat visits)', () => {
+    let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, nkvdVisits: 2, roubles: 1000, ownedTileIds: [6] },
+      },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]); // 30 + 9 -> tile 39, NKVD HQ, 3rd visit
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000 - 300); // LENIN_FINE_NKVD
+    expect(state.players.p1.ownedTileIds).toEqual([6]); // kept - not wiped like a real Disappear
+    expect(state.players.p1.isSpectating).toBe(false);
+  });
+
+  it("jails for insolvency (doesn't partially pay) if the fine itself is unaffordable", () => {
+    let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, nkvdVisits: 2, roubles: 100, ownedTileIds: [] }, // fine is 300
+      },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(100); // untouched
+    expect(state.players.p1.inJail).toBe(true);
+    expect(state.players.p1.jailedForInsolvency).toBe(true);
+  });
+
+  it('Stalin mode is unaffected by any of this - the same trigger still fully Disappears', () => {
+    let state = createInitialGameState(PLAYERS); // stalin (default)
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, nkvdVisits: 2, roubles: 500, ownedTileIds: [6] },
+      },
+    };
+    state = withPosition(state, 'p1', 30);
+    state = devSetForcedRoll(state, [4, 5]);
+    state = rollDice(state);
+
+    expect(state.players.p1.roubles).toBe(1000); // full reset, not a fine
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
+  describe('insolvency bailout roll', () => {
+    it('doubles escapes jail and pays out a 100 rouble bailout', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: { ...state.players.p1, inJail: true, jailedForInsolvency: true, roubles: 0, position: 10 },
+        },
+      };
+      state = devSetForcedRoll(state, [3, 3]);
+
+      state = rollDice(state);
+
+      expect(state.players.p1.inJail).toBe(false);
+      expect(state.players.p1.jailedForInsolvency).toBe(false);
+      expect(state.players.p1.roubles).toBe(100);
+    });
+
+    it('anything but doubles eliminates outright', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: {
+            ...state.players.p1,
+            inJail: true,
+            jailedForInsolvency: true,
+            roubles: 0,
+            position: 10,
+            ownedTileIds: [6],
+          },
+        },
+      };
+      state = devSetForcedRoll(state, [3, 4]);
+
+      state = rollDice(state);
+
+      expect(state.players.p1.isSpectating).toBe(true);
+      expect(state.players.p1.jailedForInsolvency).toBe(false);
+      expect(state.players.p1.ownedTileIds).toEqual([]);
+    });
+  });
+
+  describe('liquidation choice (unpayable jail bribe)', () => {
+    it('opens a liquidationChoice decision instead of eliminating outright if there is something to sell', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [6] },
+        },
+      };
+
+      state = endTurn(state);
+
+      expect(state.pendingDecision).toEqual({ type: 'liquidationChoice', forPlayerId: 'p1', amountOwed: 100 });
+      expect(state.currentTurnIndex).toBe(0); // turn hasn't actually advanced yet
+    });
+
+    it('eliminates outright, no liquidationChoice, if there is nothing to sell', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [] },
+        },
+      };
+
+      state = endTurn(state);
+
+      expect(state.pendingDecision).toBeNull();
+      expect(state.players.p1.isSpectating).toBe(true);
+      expect(state.currentTurnIndex).toBe(1); // turn actually finished advancing
+    });
+
+    it('confirmLiquidationPayment pays and finishes the turn once affordable, no-ops otherwise', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [6] }, // tile 6, price 100
+        },
+      };
+      state = endTurn(state);
+      expect(state.pendingDecision?.type).toBe('liquidationChoice');
+
+      state = mortgageProperty(state, 'p1', 6); // +50 -> 60, still short of 100
+      expect(state.players.p1.roubles).toBe(60);
+      expect(confirmLiquidationPayment(state)).toBe(state); // no-op, still can't afford it
+
+      state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 150 } } };
+      state = confirmLiquidationPayment(state);
+
+      expect(state.pendingDecision).toBeNull();
+      expect(state.players.p1.roubles).toBe(50);
+      expect(state.currentTurnIndex).toBe(1); // turn finished advancing
+    });
+
+    it('declareBankruptcy eliminates the player and finishes the turn', () => {
+      let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+      state = {
+        ...state,
+        players: {
+          ...state.players,
+          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [6] },
+        },
+      };
+      state = endTurn(state);
+      expect(state.pendingDecision?.type).toBe('liquidationChoice');
+
+      state = declareBankruptcy(state);
+
+      expect(state.players.p1.isSpectating).toBe(true);
+      expect(state.pendingDecision).toBeNull();
+      expect(state.currentTurnIndex).toBe(1);
+    });
+  });
+
+  it('the match ends once exactly one non-spectating player is left', () => {
+    const players = [
+      { playerId: 'p1', pieceId: 'boot' as const },
+      { playerId: 'p2', pieceId: 'battleship' as const },
+      { playerId: 'p3', pieceId: 'car' as const },
+    ];
+    let state = createInitialGameState(players, Math.random, false, 'lenin');
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [] },
+      },
+    };
+
+    state = endTurn(state); // p1 eliminated outright - p2 and p3 still active
+
+    expect(state.players.p1.isSpectating).toBe(true);
+    expect(state.leninWinnerId).toBeNull();
+
+    state = {
+      ...state,
+      currentTurnIndex: state.turnOrder.indexOf('p2'),
+      players: {
+        ...state.players,
+        p2: { ...state.players.p2, inJail: true, roubles: 10, ownedTileIds: [] },
+      },
+    };
+    state = endTurn(state);
+
+    expect(state.players.p2.isSpectating).toBe(true);
+    expect(state.leninWinnerId).toBe('p3');
+  });
+});
+
+describe('trading (both modes)', () => {
+  it('proposes, then accept swaps tiles/roubles both ways', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, ownedTileIds: [6], roubles: 500 },
+        p2: { ...state.players.p2, ownedTileIds: [8], roubles: 500 },
+      },
+    };
+
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 50 }, { tileIds: [8], roubles: 0 });
+    expect(state.activeTrades).toHaveLength(1);
+
+    state = acceptTrade(state, 'trade-1');
+
+    expect(state.activeTrades).toHaveLength(0);
+    expect(state.players.p1.ownedTileIds).toEqual([8]);
+    expect(state.players.p2.ownedTileIds).toEqual([6]);
+    expect(state.players.p1.roubles).toBe(450);
+    expect(state.players.p2.roubles).toBe(550);
+  });
+
+  it('decline removes the offer without swapping anything', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+
+    state = declineTrade(state, 'trade-1');
+
+    expect(state.activeTrades).toHaveLength(0);
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+  });
+
+  it('withdraw removes the offer without swapping anything', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+
+    state = withdrawTrade(state, 'trade-1');
+
+    expect(state.activeTrades).toHaveLength(0);
+    expect(state.players.p1.ownedTileIds).toEqual([6]);
+  });
+
+  it('rejects proposing a tile with houses on it', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } },
+      propertyHouses: { 6: 2 },
+    };
+
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+
+    expect(state.activeTrades).toHaveLength(0);
+  });
+
+  it('rejects proposing a tile locked by Siege of Stalingrad', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } },
+      lockedTileIds: [6],
+    };
+
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+
+    expect(state.activeTrades).toHaveLength(0);
+  });
+
+  it('accept fails gracefully (no swap, just removes the offer) if something changed since it was proposed', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+
+    // p1 loses the property some other way before p2 accepts.
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [] } } };
+
+    state = acceptTrade(state, 'trade-1');
+
+    expect(state.activeTrades).toHaveLength(0);
+    expect(state.players.p2.ownedTileIds).toEqual([]); // nothing actually transferred
+  });
+
+  it('Disappearing clears any trades involving that player', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [6] } } };
+    state = proposeTrade(state, 'trade-1', 'p1', 'p2', { tileIds: [6], roubles: 0 }, { tileIds: [], roubles: 0 });
+    expect(state.activeTrades).toHaveLength(1);
+
+    state = devForceDisappear(state, 'p1');
+
+    expect(state.activeTrades).toHaveLength(0);
   });
 });

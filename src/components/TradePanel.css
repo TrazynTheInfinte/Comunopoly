@@ -1,0 +1,58 @@
+.trade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trade-builder {
+  border: 2px solid var(--color-black);
+  background: var(--color-grey-light);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.trade-builder-columns {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.trade-builder-columns fieldset {
+  flex: 1;
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 2px solid var(--color-black);
+}
+
+.trade-builder-columns label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trade-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.trade-list li {
+  border: 2px solid var(--color-black);
+  background: var(--color-grey-light);
+  padding: 0.5em 0.75em;
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.trade-side {
+  margin: 0;
+  color: var(--color-grey);
+}

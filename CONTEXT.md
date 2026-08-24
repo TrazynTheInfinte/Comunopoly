@@ -4,6 +4,34 @@ A browser-based, rules-enforcing remake of *Comunopoly*, a communist-themed Mono
 
 ## Language
 
+### Ruleset
+
+**Ruleset**:
+Set once by the host at room creation - which of the two games a Room actually plays. Independent of Room Mode (Piece assignment, "beginner"/"experienced"), which applies under either Ruleset.
+_Avoid_: game mode, variant (use Ruleset for this specific choice, to keep it distinct from "Room Mode")
+
+**Stalin Communism**:
+The original Ruleset: the Piece Pool/Endgame/Score apparatus, and Disappearing wipes a player's assets and hands them a fresh Piece from the Pool. Everything in this glossary describes Stalin Communism unless a term's own entry says otherwise.
+
+**Lenin Communism**:
+The second Ruleset - closer to classic Monopoly. No Piece Pool or Score: the game ends in classic Bankruptcy (last player standing wins). Piece Special Powers are unchanged. Every Disappear trigger from Stalin Communism still triggers, but its consequence changes - see Fine, Bankruptcy, Insolvency Bailout, and Liquidation Choice below. Trading is available in both Rulesets.
+
+**Fine**:
+Lenin Communism only. What replaces a Disappear at every trigger except an unpayable jail Bribe (see Liquidation Choice): the player pays a fixed Rouble amount instead of losing everything, scaled to how severe the original trigger felt. If they can't afford the Fine, they're jailed for it exactly like any other unpayable debt (see Destitute) - not partially charged.
+
+**Bankruptcy** / **Eliminated**:
+Lenin Communism only. The real "lose" state, replacing Disappear's "pick a new Piece" outcome: the player is permanently out (reusing the same "permanently out, skipped in turn order forever" state a Stalin-mode Disappear-with-empty-Pool already uses), their properties/houses return to the bank, and their Roubles are simply gone - always to the bank, never to a specific creditor. The match ends the instant only one player is left un-Eliminated; that player wins.
+_Avoid_: Disappear (a materially different consequence - no new Piece, no return to play)
+
+**Insolvency Bailout**:
+Lenin Communism only. What happens on a player's very next roll after being jailed for an unpayable debt (rent, a STOY fee, a toll, an unaffordable Fine): rolling doubles escapes jail and pays out a 100-Rouble bailout; anything else is immediate Bankruptcy. A one-shot exception to jail's normal multi-attempt escape rules, used only for this specific kind of jailing.
+
+**Liquidation Choice**:
+Lenin Communism only. The one Disappear trigger that doesn't become a flat Fine: failing to afford the jail Bribe. The player is offered the choice of selling houses/mortgaging properties to try to cover it (or declaring Bankruptcy outright instead) - real Monopoly liquidation, rather than a Fine they may not be able to pay either.
+
+**Trade**:
+A player-to-player exchange of properties and/or Roubles, proposed to a specific player who accepts or declines - available in both Rulesets. Neither side can offer a property with houses on it (sell those first) or one exempt from ownership transfers (Chernobyl Power, a Siege of Stalingrad lock).
+
 ### Currency & the State
 
 **Rouble**:
@@ -47,12 +75,12 @@ The final tally computed by a Win Condition at the Endgame. Distinct from Rouble
 _Avoid_: points
 
 **Disappear**:
-A Piece's permanent removal from play: its Roubles, properties, and West stash are all Seized by the State, and the human player who held it selects a new, unclaimed Piece from the Piece Pool and rejoins with a fresh 1000 Roubles. The old Piece is gone for good — "your old piece never existed."
-_Avoid_: bankrupt, eliminated, lose, die, knocked out — none of these fit, since the human player keeps playing under a new Piece.
+Stalin Communism only. A Piece's permanent removal from play: its Roubles, properties, and West stash are all Seized by the State, and the human player who held it selects a new, unclaimed Piece from the Piece Pool and rejoins with a fresh 1000 Roubles. The old Piece is gone for good — "your old piece never existed." In Lenin Communism, the same triggers fire, but the consequence is a Fine or Bankruptcy instead — see the Ruleset section above.
+_Avoid_: bankrupt, eliminated, lose, die, knocked out — none of these fit, since the human player keeps playing under a new Piece. (Lenin Communism's Bankruptcy/Eliminated is the real exception to this.)
 
 **Destitute**:
-The state of having run out of Roubles — either because a payment couldn't be afforded at all (the debt is forgiven), or because an affordable payment drained the player down to exactly 0. Either way sends the player to jail. A precursor that can lead to Disappearing (if they can't pay the jail Bribe), but is not itself Disappearing.
-_Avoid_: bankrupt
+The state of having run out of Roubles — either because a payment couldn't be afforded at all (the debt is forgiven), or because an affordable payment drained the player down to exactly 0. Either way sends the player to jail. In Stalin Communism, a precursor that can lead to Disappearing (if they can't pay the jail Bribe), but is not itself Disappearing. In Lenin Communism, being sent to jail this way triggers an Insolvency Bailout on the player's next roll instead of jail's normal escape rules.
+_Avoid_: bankrupt (except when specifically discussing Lenin Communism, where it's the correct term)
 
 **Piece Pool**:
 The set of Pieces not currently claimed by an active player — available to be picked when a new player joins, or when a player Disappears and needs a replacement Piece.

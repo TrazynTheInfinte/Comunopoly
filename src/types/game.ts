@@ -15,6 +15,9 @@ export type ColorGroup =
 
 export type CardDeck = 'communistTest' | 'noChance';
 
+export type { RulesetMode } from './room';
+import type { RulesetMode } from './room';
+
 interface BaseTile {
   /** Position on the board, 0 (STOY) through 39, going clockwise. */
   id: number;
@@ -143,7 +146,7 @@ export interface GamePlayerState {
   westRoubles: number;
   /** Roubles Smuggled but still waiting at Free Parking - not yet safe. If ANY other player lands on Free Parking before this player lands there again (or passes/lands on STOY), that player keeps it and this player Disappears. Moves into westRoubles once secured. */
   pendingWestRoubles: number;
-  /** Permanently out of the game (Disappeared after the Piece Pool ran dry, so there was no replacement Piece left to take) - keeps their seat and can watch, but is skipped in turn order forever and scores nothing at Endgame. */
+  /** Permanently out of the game - keeps their seat and can watch, but is skipped in turn order forever. In Stalin mode: Disappeared after the Piece Pool ran dry, so there was no replacement Piece left to take (scores nothing at Endgame). In Lenin mode: eliminatePlayer's real bankruptcy - the game ends once only one non-spectating player is left (see GameState.leninWinnerId). */
   isSpectating: boolean;
   /** Times this player has used Rubber duck's power to actually send someone to jail (not other jailing mechanics) - feeds Rubber duck's Win Condition. */
   sentToJailCount: number;
@@ -153,6 +156,17 @@ export interface GamePlayerState {
   consecutiveAfkSkips: number;
   /** True only while spectating because afkSkipTurn benched them for being away too long - distinct from isSpectating alone, which a real Disappear/kick also sets but permanently (assets seized, no way back). This one can be undone with rejoinFromAfk, since nothing was ever seized. */
   isAfkSpectating: boolean;
+  /**
+   * Lenin mode only: set when an unpayable debt (rent, a STOY fee, a
+   * toll, a fine standing in for what would be a Disappear in Stalin
+   * mode) sends this player to jail. Changes what their very next roll
+   * does - see resolveJailRoll: doubles escapes jail AND pays out a
+   * 100-rouble bailout; anything else eliminates them outright. Cleared
+   * the instant that roll resolves either way. Ordinary jail (Go To
+   * Jail, cards, NKVD, 3 doubles) never sets this, so it keeps its
+   * normal multi-attempt escape rules.
+   */
+  jailedForInsolvency: boolean;
 }
 
 /**
@@ -179,6 +193,12 @@ export interface GamePlayerState {
  * the deck doesn't actually get drawn from until the player clicks the
  * matching pile (see drawFromPile in game/engine.ts), which is what
  * turns into cardChoice or cardDrawn next.
+ *
+ * liquidationChoice (Lenin mode only) is a player at the end of their
+ * turn, still in jail, unable to afford the jail bribe - they can sell
+ * houses/mortgage properties (the existing sellHouse/mortgageProperty,
+ * unrestricted by any pendingDecision) to try to cover it, then either
+ * pay (confirmLiquidationPayment) or give up (declareBankruptcy).
  */
 export type PendingDecision =
   | { type: 'purchase'; tileId: number }
@@ -189,7 +209,8 @@ export type PendingDecision =
   | { type: 'cardTarget'; cardId: string; forPlayerId: string }
   | { type: 'nkvdQuiz'; questionIndex: number; forPlayerId: string }
   | { type: 'cardDrawn'; cardId: string; forPlayerId: string }
-  | { type: 'smuggleOffer'; maxAmount: number };
+  | { type: 'smuggleOffer'; maxAmount: number }
+  | { type: 'liquidationChoice'; forPlayerId: string; amountOwed: number };
 
 export interface GameState {
   /** Player IDs in turn order. */
@@ -300,6 +321,25 @@ export interface GameState {
    * anywhere in engine.ts itself.
    */
   lastDisappearedPlayerId: string | null;
+  /** Set once at room creation (see Room.rulesetMode) - which ruleset this match is actually running. Read throughout engine.ts to branch Disappear-vs-fine/bankruptcy behavior; UI reads it to decide which endgame screen/mechanics apply. */
+  rulesetMode: RulesetMode;
+  /** Lenin mode only: set by eliminatePlayer the moment only one non-spectating player is left in turnOrder - that player's ID, and the game is over. Null the rest of the time, including throughout a Stalin-mode match (which uses endgame/results instead). */
+  leninWinnerId: string | null;
+  /** Pending player-to-player trade proposals (both modes) - independent of pendingDecision (like activeVote), since trading isn't turn-gated and shouldn't block or be blocked by whatever else is pending. See proposeTrade/acceptTrade/declineTrade/withdrawTrade. */
+  activeTrades: TradeOffer[];
+}
+
+/** A proposed trade between two players - properties and/or roubles, either direction. Neither side's tileIds may have houses on them (must be sold first) or be in lockedTileIds (Siege of Stalingrad). Not resolved until the recipient (toPlayerId) accepts or declines, or the proposer (fromPlayerId) withdraws it. */
+export interface TradeOffer {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  /** What fromPlayerId is putting up. */
+  offerTileIds: number[];
+  offerRoubles: number;
+  /** What fromPlayerId wants from toPlayerId in return. */
+  requestTileIds: number[];
+  requestRoubles: number;
 }
 
 export interface ShowTrialVote {
