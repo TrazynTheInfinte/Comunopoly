@@ -19,6 +19,7 @@ import {
   resolveCardTargetAndSync,
   resolveCatRedirectAndSync,
   resolveSmuggleOfferAndSync,
+  rollCardDieAndSync,
   rollDiceAndSync,
   sellHouseAndSync,
   skipPurchaseAndSync,
@@ -288,6 +289,10 @@ export async function runBotStep(
         await resolveCardTargetAndSync(roomCode, game, { targetTileId: tileId });
         return;
       }
+
+      case 'cardDiceRoll':
+        await rollCardDieAndSync(roomCode, game);
+        return;
 
       case 'nkvdQuiz': {
         // Always random regardless of difficulty - there's no way for a

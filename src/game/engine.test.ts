@@ -39,6 +39,7 @@ import {
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   resolveSmuggleOffer,
+  rollCardDie,
   rollDice,
   sellHouse,
   skipPurchase,
@@ -1251,7 +1252,9 @@ describe('newly automated cards', () => {
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
-      state = drawFromPile(state, () => 0.99); // -> 6
+      state = drawFromPile(state);
+      expect(state.pendingDecision).toEqual({ type: 'cardDiceRoll', cardId: 'bestseller', forPlayerId: 'p1' });
+      state = rollCardDie(state, () => 0.99); // -> 6
 
       expect(state.players.p1.roubles).toBe(1500);
       expect(state.players.p1.inJail).toBe(true);
@@ -1263,7 +1266,8 @@ describe('newly automated cards', () => {
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
-      state = drawFromPile(state, () => 0); // -> 1
+      state = drawFromPile(state);
+      state = rollCardDie(state, () => 0); // -> 1
 
       expect(state.players.p1.roubles).toBe(1000); // reset by Disappear
     });
@@ -1275,7 +1279,8 @@ describe('newly automated cards', () => {
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
-      state = drawFromPile(state, () => 0.4); // -> 3
+      state = drawFromPile(state);
+      state = rollCardDie(state, () => 0.4); // -> 3
 
       expect(state.players.p1.roubles).toBe(1500); // kept the 500
       expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -1288,7 +1293,8 @@ describe('newly automated cards', () => {
       state = devSetForcedCard(state, 'bestseller');
       state = devSetForcedRoll(state, [1, 3]);
       state = rollDice(state);
-      state = drawFromPile(state, () => 0.4); // -> 3, no property owned
+      state = drawFromPile(state);
+      state = rollCardDie(state, () => 0.4); // -> 3, no property owned
 
       expect(state.players.p1.roubles).toBe(1500);
       expect(state.players.p1.inJail).toBe(true);
@@ -1437,7 +1443,9 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
-    state = drawFromPile(state, () => 0); // internal die roll -> 1
+    state = drawFromPile(state);
+    expect(state.pendingDecision).toEqual({ type: 'cardDiceRoll', cardId: 'phoneCallFromStalin', forPlayerId: 'p1' });
+    state = rollCardDie(state, () => 0); // -> 1
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
@@ -1450,7 +1458,8 @@ describe('newly automated cards', () => {
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
-    state = drawFromPile(state, () => 0.99); // internal die roll -> 6, not 1
+    state = drawFromPile(state);
+    state = rollCardDie(state, () => 0.99); // -> 6, not 1
 
     expect(state.pendingDecision).toEqual({ type: 'cardTarget', cardId: 'phoneCallFromStalin', forPlayerId: 'p1' });
 
@@ -2357,7 +2366,8 @@ describe("Hat's power (free house on completing a collection)", () => {
     state = devSetForcedCard(state, 'phoneCallFromStalin');
     state = devSetForcedRoll(state, [1, 3]);
     state = rollDice(state);
-    state = drawFromPile(state, () => 0.99); // internal die roll -> 6, not 1
+    state = drawFromPile(state);
+    state = rollCardDie(state, () => 0.99); // -> 6, not 1
 
     // Re-claims an already-owned tile - routes back through giveTileTo,
     // re-triggering the Hat check, but the group is already recorded.

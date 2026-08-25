@@ -1236,26 +1236,32 @@ function greatPurgeEffect(state: GameState, _playerId: string, rng: () => number
  * Bestseller!: the card offers two alternative resolutions ("go to
  * prison until you roll a 6... OR roll one die..."). We only automate
  * the second, simpler branch - the first would need a whole separate
- * jail-like sub-state machine for an already-optional path.
+ * jail-like sub-state machine for an already-optional path. `roll` comes
+ * from the player's own click on a pending cardDiceRoll decision (see
+ * rollCardDie) rather than being rolled here.
  */
-function bestsellerEffect(state: GameState, playerId: string, rng: () => number): GameState {
+function bestsellerResolve(state: GameState, playerId: string, roll: number): GameState {
   let next = giveRoubles(state, playerId, 500);
-  const roll = rollOneDie(rng);
+  const cardDrawnDecision = { type: 'cardDrawn' as const, cardId: 'bestseller', forPlayerId: playerId };
 
   if (roll === 6) {
-    return logEvent(next, `Rolled a ${roll} - burned the evidence and denied everything. Kept the 500 roubles.`);
+    next = logEvent(next, `Rolled a ${roll} - burned the evidence and denied everything. Kept the 500 roubles.`);
+    return { ...next, pendingDecision: cardDrawnDecision };
   }
   if (roll === 1) {
-    return handleDisappearTrigger(next, playerId, 'rolled a 1 trying to cover up the bestseller', LENIN_FINE_BESTSELLER);
+    next = handleDisappearTrigger(next, playerId, 'rolled a 1 trying to cover up the bestseller', LENIN_FINE_BESTSELLER);
+    return { ...next, pendingDecision: cardDrawnDecision };
   }
 
   const tradeable = next.players[playerId].ownedTileIds.filter((t) => isTradeable(next, t));
   if (tradeable.length === 0) {
-    return logEvent(sendToJail(next, playerId), `Rolled a ${roll} with no property to surrender - sent to jail instead.`);
+    next = logEvent(sendToJail(next, playerId), `Rolled a ${roll} with no property to surrender - sent to jail instead.`);
+    return { ...next, pendingDecision: cardDrawnDecision };
   }
   const remaining = next.players[playerId].ownedTileIds.filter((t) => !tradeable.includes(t));
   next = { ...next, players: { ...next.players, [playerId]: { ...next.players[playerId], ownedTileIds: remaining } } };
-  return logEvent(next, `Rolled a ${roll} - kept the 500 roubles but surrendered all property.`);
+  next = logEvent(next, `Rolled a ${roll} - kept the 500 roubles but surrendered all property.`);
+  return { ...next, pendingDecision: cardDrawnDecision };
 }
 
 /**
@@ -1306,7 +1312,6 @@ const CARD_EFFECTS: Record<
   collectivizationDrive: (state, playerId, rng) => collectivizationDriveEffect(state, playerId, rng),
   greatPurge: (state, playerId, rng) => greatPurgeEffect(state, playerId, rng),
   telegraphUnion: (state, playerId) => ({ ...state, commissarPlayerId: playerId }),
-  bestseller: (state, playerId, rng) => bestsellerEffect(state, playerId, rng),
   fourthInternational: (state, playerId, rng) => fourthInternationalEffect(state, playerId, rng),
   denounceCollaborators: (state, playerId) => addToHand(state, playerId, 'denounceCollaborators'),
   secretInformant: (state, playerId) => addToHand(state, playerId, 'secretInformant'),
@@ -1411,15 +1416,20 @@ function applyDrawnCard(
   return applyCardEffectsFor(next, playerId, cardId, rng);
 }
 
+// Cards whose text calls for a die roll (Bestseller!, Phone Call from
+// Stalin) - rather than rolling it for the player automatically, this
+// opens a cardDiceRoll decision so they click Roll themselves, same as
+// any other roll in the game. See rollCardDie/resolveCardDiceRoll.
+const CARDS_NEEDING_DICE_ROLL = new Set(['phoneCallFromStalin', 'bestseller']);
+
 /**
  * Actually applies a card's effect to whichever player it ends up
  * affecting - normally the drawer, but Cat's power can redirect this to
  * someone else. Resolves immediately (see CARD_EFFECTS) or, for cards
- * needing a target, opens a cardTarget decision first. Phone Call from
- * Stalin and NKVD get their own inline handling since a die roll (or a
- * quiz) decides what happens next. Every pendingDecision this opens
- * carries `forPlayerId: affectedPlayerId`, since that player - not
- * necessarily the current turn player - is the one who resolves it.
+ * needing a target, a die roll, or NKVD's quiz, opens the matching
+ * decision first instead. Every pendingDecision this opens carries
+ * `forPlayerId: affectedPlayerId`, since that player - not necessarily
+ * the current turn player - is the one who resolves it.
  */
 function applyCardEffectsFor(
   state: GameState,
@@ -1429,14 +1439,8 @@ function applyCardEffectsFor(
 ): GameState {
   let next = state;
 
-  if (cardId === 'phoneCallFromStalin') {
-    const roll = rollOneDie(rng);
-    if (roll === 1) {
-      next = handleDisappearTrigger(next, affectedPlayerId, `rolled a 1 on the Phone Call from Stalin`, LENIN_FINE_PHONE_CALL);
-      return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
-    }
-    next = logEvent(next, `Rolled a ${roll} - choose a free property.`);
-    return { ...next, pendingDecision: { type: 'cardTarget', cardId, forPlayerId: affectedPlayerId } };
+  if (CARDS_NEEDING_DICE_ROLL.has(cardId)) {
+    return { ...next, pendingDecision: { type: 'cardDiceRoll', cardId, forPlayerId: affectedPlayerId } };
   }
 
   if (cardId === 'nkvd') {
@@ -1453,6 +1457,29 @@ function applyCardEffectsFor(
     next = effect(next, affectedPlayerId, rng);
   }
   return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: affectedPlayerId } };
+}
+
+/**
+ * The affected player clicks Roll on a pending cardDiceRoll decision
+ * (Bestseller!, Phone Call from Stalin) - actually rolls the one die the
+ * card's text calls for, then resolves that card's specific outcome.
+ */
+export function rollCardDie(state: GameState, rng: () => number = Math.random): GameState {
+  if (state.pendingDecision?.type !== 'cardDiceRoll') return state;
+  const { cardId, forPlayerId: playerId } = state.pendingDecision;
+  const roll = rollOneDie(rng);
+
+  if (cardId === 'phoneCallFromStalin') {
+    if (roll === 1) {
+      const next = handleDisappearTrigger(state, playerId, `rolled a 1 on the Phone Call from Stalin`, LENIN_FINE_PHONE_CALL);
+      return { ...next, pendingDecision: { type: 'cardDrawn', cardId, forPlayerId: playerId } };
+    }
+    const next = logEvent(state, `Rolled a ${roll} - choose a free property.`);
+    return { ...next, pendingDecision: { type: 'cardTarget', cardId, forPlayerId: playerId } };
+  }
+
+  // bestseller - the only other CARDS_NEEDING_DICE_ROLL member.
+  return bestsellerResolve(state, playerId, roll);
 }
 
 /**

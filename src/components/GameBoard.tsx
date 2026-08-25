@@ -11,6 +11,7 @@ import {
   declineVolgaOfferAndSync,
   endTurnAndSync,
   rejoinFromAfkAndSync,
+  rollCardDieAndSync,
   rollDiceAndSync,
   skipPurchaseAndSync,
 } from '../lib/gameSync';
@@ -162,6 +163,14 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const pendingCard = game.pendingDecision?.type === 'cardDrawn' ? findCard(game.pendingDecision.cardId) : null;
   const isPendingCardMine =
     game.pendingDecision?.type === 'cardDrawn' && game.pendingDecision.forPlayerId === playerId;
+  // Bestseller!/Phone Call from Stalin - the card is already drawn and
+  // logged, but its text calls for a die roll, which the affected player
+  // now has to click Roll for themselves instead of it happening
+  // automatically. Shown to everyone, same reasoning as pendingCard above.
+  const pendingDiceRollCard =
+    game.pendingDecision?.type === 'cardDiceRoll' ? findCard(game.pendingDecision.cardId) : null;
+  const isPendingDiceRollMine =
+    game.pendingDecision?.type === 'cardDiceRoll' && game.pendingDecision.forPlayerId === playerId;
   const me = game.players[playerId];
   const myPendingPieceChoice = game.pendingPieceChoices.includes(playerId);
   const myPendingEndgameTarget = game.endgame?.pendingTargetChoices.includes(playerId) ?? false;
@@ -408,6 +417,22 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                 ) : (
                   <p className="hint">
                     Waiting for {room.players[game.pendingDecision.forPlayerId]?.name}...
+                  </p>
+                )}
+              </div>
+            </ActionModal>
+          )}
+
+          {pendingDiceRollCard && game.pendingDecision?.type === 'cardDiceRoll' && (
+            <ActionModal>
+              <div key={game.pendingDecision.cardId} className="purchase-prompt card-prompt card-reveal">
+                <p className="card-title">{leninizeText(pendingDiceRollCard.title, game.rulesetMode)}</p>
+                <p>{leninizeText(pendingDiceRollCard.text, game.rulesetMode)}</p>
+                {isPendingDiceRollMine ? (
+                  <button onClick={() => rollCardDieAndSync(roomCode, game)}>Roll the Die</button>
+                ) : (
+                  <p className="hint">
+                    Waiting for {room.players[game.pendingDecision.forPlayerId]?.name} to roll...
                   </p>
                 )}
               </div>

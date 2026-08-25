@@ -43,6 +43,7 @@ import {
   resolveCatRedirect,
   resolveRubberDuckEncounter,
   resolveSmuggleOffer,
+  rollCardDie,
   rollDice,
   sellHouse,
   skipPurchase,
@@ -125,6 +126,11 @@ export async function startNewMatch(roomCode: string, room: Room) {
 
 export async function rollDiceAndSync(roomCode: string, game: GameState) {
   await writeGameState(roomCode, rollDice(game));
+}
+
+/** Rolls the die a pending cardDiceRoll decision (Bestseller!, Phone Call from Stalin) is waiting on. */
+export async function rollCardDieAndSync(roomCode: string, game: GameState) {
+  await writeGameState(roomCode, rollCardDie(game));
 }
 
 export async function buyPropertyAndSync(roomCode: string, game: GameState) {

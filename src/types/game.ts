@@ -180,7 +180,12 @@ export interface GamePlayerState {
  * acknowledge a drawn Communist Test/No Chance card before play
  * continues.
  *
- * cardTarget/nkvdQuiz/cardDrawn carry `forPlayerId` - normally the
+ * cardDiceRoll is a drawn card whose text calls for a die roll
+ * (Bestseller!, Phone Call from Stalin) - the affected player clicks
+ * Roll themselves (rollCardDie in game/engine.ts) instead of it
+ * happening automatically, same as any other roll in the game.
+ *
+ * cardTarget/nkvdQuiz/cardDrawn/cardDiceRoll carry `forPlayerId` - normally the
  * drawer, but when Cat redirects a card, this is whoever they gave it
  * to instead. UI and resolution both key off this, not just "whoever's
  * turn it is."
@@ -207,6 +212,7 @@ export type PendingDecision =
   | { type: 'cardChoice'; deck: CardDeck }
   | { type: 'catRedirect'; cardId: string }
   | { type: 'cardTarget'; cardId: string; forPlayerId: string }
+  | { type: 'cardDiceRoll'; cardId: string; forPlayerId: string }
   | { type: 'nkvdQuiz'; questionIndex: number; forPlayerId: string }
   | { type: 'cardDrawn'; cardId: string; forPlayerId: string }
   | { type: 'smuggleOffer'; maxAmount: number }
