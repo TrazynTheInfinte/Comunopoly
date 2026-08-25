@@ -98,6 +98,18 @@ button:disabled {
   background: var(--color-grey);
 }
 
+.bot-badge {
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0.05em 0.4em;
+  font-size: 0.7em;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
 /* A destructive/irreversible action (closing a Room, ending a match
    entirely) - visually distinct from the normal red buttons everywhere
    else, so it doesn't blend in as just another routine action. */

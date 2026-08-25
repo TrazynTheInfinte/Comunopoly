@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import { startGame } from '../lib/gameSync';
 import { isPlayerAway } from '../lib/presence';
-import { choosePiece, closeLobby, leaveRoom } from '../lib/rooms';
+import { addBotToLobby, choosePiece, closeLobby, leaveRoom } from '../lib/rooms';
 import type { PieceId } from '../types/game';
 import type { Room } from '../types/room';
 import RoomQrCode from './RoomQrCode';
@@ -22,6 +22,7 @@ function pieceName(pieceId: PieceId): string {
 
 function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
   const [error, setError] = useState('');
+  const [botDifficulty, setBotDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal');
   const players = Object.entries(room.players);
   const isHost = room.hostId === playerId;
   const me = room.players[playerId];
@@ -60,6 +61,19 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
     onLeave();
   }
 
+  async function handleAddBot() {
+    setError('');
+    try {
+      await addBotToLobby(roomCode, botDifficulty);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    }
+  }
+
+  async function handleRemoveBot(botId: string) {
+    await leaveRoom(roomCode, botId);
+  }
+
   return (
     <main className="lobby">
       <p className="lobby-label">Room Code</p>
@@ -75,15 +89,41 @@ function LobbyScreen({ room, roomCode, playerId, onLeave }: LobbyScreenProps) {
           <li key={id} className={id === playerId ? 'is-you' : ''}>
             <span className={`presence-dot ${isPlayerAway(player) ? 'is-away' : ''}`} title={isPlayerAway(player) ? 'Away' : 'Online'} />
             {player.name}
+            {player.isBot && <span className="bot-badge">BOT {player.botDifficulty}</span>}
             {id === playerId ? ' (you)' : ''}
             {id === room.hostId ? ' ★' : ''}
             {player.pieceId
               ? ` - ${pieceName(player.pieceId)}`
               : ' - choosing...'}
+            {isHost && player.isBot && (
+              <button
+                type="button"
+                className="lobby-remove-bot"
+                onClick={() => handleRemoveBot(id)}
+              >
+                Remove
+              </button>
+            )}
           </li>
         ))}
         {players.length === 0 && <li>Waiting for players...</li>}
       </ul>
+
+      {isHost && (
+        <div className="lobby-add-bot">
+          <select
+            value={botDifficulty}
+            onChange={(event) => setBotDifficulty(event.target.value as 'easy' | 'normal' | 'hard')}
+          >
+            <option value="easy">Easy</option>
+            <option value="normal">Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+          <button type="button" onClick={handleAddBot}>
+            Add Bot
+          </button>
+        </div>
+      )}
 
       {room.mode === 'beginner' && me && !me.pieceId && (
         <div className="piece-picker">

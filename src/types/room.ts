@@ -32,6 +32,10 @@ export interface RoomPlayer {
   pieceId: PieceId | null;
   /** Client epoch-ms timestamp from this player's own last heartbeat (see lib/presence.ts) - absent for a player who joined before this existed, or hasn't sent one yet. Used to show an "away" indicator, not for anything the game logic depends on. */
   lastSeenAt?: number;
+  /** True for a bot added in the lobby (see lib/rooms.ts's addBotToLobby) - absent for a real player. */
+  isBot?: boolean;
+  /** Set alongside isBot, chosen when the bot was added - see lib/botAi.ts. */
+  botDifficulty?: 'easy' | 'normal' | 'hard';
 }
 
 export interface Room {

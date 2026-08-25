@@ -14,6 +14,7 @@ const AWAY_THRESHOLD_MS = 80_000;
 
 /** True if this player's last heartbeat is stale enough to show as away. A player who's never sent one (joined before this existed, or hasn't had a chance to yet) is treated as present rather than immediately flagged away. */
 export function isPlayerAway(player: RoomPlayer): boolean {
+  if (player.isBot) return false;
   if (player.lastSeenAt === undefined) return false;
   return Date.now() - player.lastSeenAt > AWAY_THRESHOLD_MS;
 }

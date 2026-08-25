@@ -97,6 +97,18 @@
   margin-top: 1rem;
 }
 
+.lobby-add-bot {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.lobby-remove-bot {
+  float: right;
+  font-size: 0.7rem;
+  padding: 0.2em 0.5em;
+}
+
 .piece-picker-title {
   font-family: var(--font-mono);
   font-weight: 400;

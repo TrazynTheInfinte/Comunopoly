@@ -132,3 +132,9 @@ A single multiplayer game session, identified by a Room Code, that players join 
 
 **Room Code**:
 The short shareable code identifying a Room.
+
+**Bot**:
+A computer-controlled player, added by the host in the Lobby (before Start Game) with a chosen Difficulty, to help fill out a Room. Driven entirely by the host's own browser (lib/botAi.ts, useBotDriver) - there's no server to run it independently, so if the host disconnects, every Bot in that Room freezes until they reconnect. Gets a random unclaimed Piece immediately, like Experienced Room Mode, regardless of the Room's actual mode. Never proposes or responds to a Trade, accuses anyone of being Trotsky, or votes in a Show Trial - deliberately out of scope, since none of those block the game from continuing.
+
+**Difficulty**:
+Chosen per Bot when it's added: Easy, Normal, or Hard. Changes only the heuristics behind a Bot's decisions (cash buffers before buying/building, how much to Smuggle, whether to target the richest opponent) - every Difficulty still resolves every decision a real player could face. Some decisions stay random at every Difficulty regardless (which specific card to draw, NKVD's trivia answer, which new Piece to pick after Disappearing) - there's no meaningful way for a Bot to "know" the right answer to those.

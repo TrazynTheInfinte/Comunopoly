@@ -47,6 +47,7 @@ import { useCardFlight } from './useCardFlight';
 import { useCurrentGameTrackName } from './useCurrentGameTrackName';
 import { useGameMusic } from './useGameMusic';
 import { useHostAfkWatchdog } from './useHostAfkWatchdog';
+import { useBotDriver } from './useBotDriver';
 import { useIsDesktop } from './useIsDesktop';
 import { useSoundEvents } from './useSoundEvents';
 import { useStagedGame } from './useStagedGame';
@@ -125,6 +126,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
   const isHost = playerId === room.hostId;
   const afkPrompt = useAfkSelfCheck(roomCode, game, playerId, isMyTurnEarly);
   useHostAfkWatchdog(roomCode, room, game, isHost);
+  useBotDriver(roomCode, room, game, isHost);
   useYourTurnChime(isMyTurnEarly);
   const turnStartNonce = useTurnStartNonce(isMyTurnEarly);
   const handleCardFlight = useCallback(
@@ -275,6 +277,7 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                       />
                     )}
                     {room.players[id]?.name} ({pieceName(player.pieceId)})
+                    {room.players[id]?.isBot && <span className="bot-badge">BOT</span>}
                   </span>
                   <span className="player-roubles">
                     ₽<AnimatedNumber value={player.roubles} />

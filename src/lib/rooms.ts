@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
+import { randomBotName } from './botNames';
 import type { PieceId } from '../types/game';
 import type { Room, RoomMode, RulesetMode } from '../types/room';
 
@@ -140,6 +141,48 @@ export async function choosePiece(
 
   await updateDoc(roomRef, {
     [`players.${playerId}.pieceId`]: pieceId,
+  });
+}
+
+/**
+ * Host-only lobby action: adds a bot with an immediately-assigned random
+ * Piece and a random "Communist <word>" name (see lib/botNames.ts).
+ * Modeled directly on joinRoom above, minus the beginner-mode blind-pick
+ * path - bots always get a Piece right away regardless of Room Mode, so
+ * they never block LobbyScreen's everyoneHasAPiece check. Throws if the
+ * Piece Pool (or, in Lenin mode, its curated LENIN_PIECE_IDS subset) is
+ * already fully claimed. Removal reuses the existing leaveRoom - a bot's
+ * ID is just another entry in `players`, nothing bot-specific to unwind.
+ */
+export async function addBotToLobby(
+  roomCode: string,
+  difficulty: 'easy' | 'normal' | 'hard',
+): Promise<void> {
+  const roomRef = doc(db, 'rooms', roomCode);
+  const snapshot = await getDoc(roomRef);
+  if (!snapshot.exists()) {
+    throw new Error(`No room found with code "${roomCode}".`);
+  }
+
+  const room = snapshot.data() as Room;
+  const claimedPieceIds = Object.values(room.players).map((player) => player.pieceId);
+  const pieceId = pickAvailablePiece(
+    claimedPieceIds,
+    room.rulesetMode === 'lenin' ? LENIN_PIECE_IDS : undefined,
+  );
+  if (pieceId === null) {
+    throw new Error('No Pieces left in the Pool for a bot to use.');
+  }
+
+  const botId = `bot-${crypto.randomUUID()}`;
+  await updateDoc(roomRef, {
+    [`players.${botId}`]: {
+      name: randomBotName(),
+      joinedAt: serverTimestamp(),
+      pieceId,
+      isBot: true,
+      botDifficulty: difficulty,
+    },
   });
 }
 
