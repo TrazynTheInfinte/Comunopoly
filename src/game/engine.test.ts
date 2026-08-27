@@ -26,6 +26,7 @@ import {
   devForceSkipTurn,
   devJumpToTile,
   devKickPlayer,
+  devRevivePlayer,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
@@ -50,7 +51,7 @@ import {
 } from './engine';
 import { COMMUNIST_TEST_CARDS, NO_CHANCE_CARDS } from '../data/cards';
 import { getTile } from '../data/board';
-import { STARTING_PIECES } from '../data/pieces';
+import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import type { EndgameState, GameState } from '../types/game';
 
 const PLAYERS = [
@@ -671,7 +672,26 @@ describe('NKVD HQ', () => {
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p1.ownedTileIds).toEqual([]);
+    // A fresh Piece shouldn't inherit the old one's already-escalated NKVD
+    // cycle - otherwise its very first NKVD visit would immediately jail
+    // or Disappear it instead of starting the cycle over.
+    expect(state.players.p1.nkvdVisits).toBe(0);
   });
+});
+
+it("resets kremlinVisits/nkvdVisits to 0 on any Disappear, not just NKVD's own", () => {
+  let state = createInitialGameState(PLAYERS);
+  state = {
+    ...state,
+    players: {
+      ...state.players,
+      p1: { ...state.players.p1, kremlinVisits: 1, nkvdVisits: 2 },
+    },
+  };
+  state = devForceDisappear(state, 'p1');
+
+  expect(state.players.p1.kremlinVisits).toBe(0);
+  expect(state.players.p1.nkvdVisits).toBe(0);
 });
 
 it("skips a flagged player's turn when ending the previous turn", () => {
@@ -758,6 +778,28 @@ describe('Chernobyl Power', () => {
 
     expect(state.chernobylCountdown).toBeNull();
     expect(state.players.p1.ownedTileIds).toEqual([12, 28]); // never exploded
+  });
+
+  it("resets the countdown when its owner Disappears/is eliminated mid-countdown, not carrying a stale value to the next owner", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      players: { ...state.players, p1: { ...state.players.p1, ownedTileIds: [12] } },
+    };
+    state = endTurn(state); // p1's turn ends -> tick, countdown 2
+    expect(state.chernobylCountdown).toBe(2);
+
+    state = devForceDisappear(state, 'p1'); // gone before it could explode
+    expect(state.chernobylCountdown).toBeNull();
+
+    // p2 is forced to take the now-unowned tile - should start completely
+    // fresh, not inherit the 2 that was left over.
+    state = devSetForcedRoll(state, [6, 6]); // p2: 0 + 12 -> tile 12 (doubles - rolls again after)
+    state = rollDice(state);
+    expect(state.players.p2.ownedTileIds).toEqual([12]);
+    state = endTurn(state); // consumes the "roll again" from doubles - turn hasn't actually ended yet
+    state = endTurn(state); // p2's turn actually ends -> first tick of a fresh countdown
+    expect(state.chernobylCountdown).toBe(2);
   });
 });
 
@@ -1082,9 +1124,15 @@ describe('Communist Test / No Chance cards', () => {
     expect(state.pendingDecision).toBeNull();
     expect(state.players.p1.ownedTileIds).toEqual([]);
 
-    // Passing STOY clears the blacklist.
+    // Merely passing through STOY no longer clears it - only landing
+    // exactly on it does.
     state = withPosition(state, 'p1', 38);
-    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps to tile 1
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1
+    state = rollDice(state);
+    expect(state.players.p1.blacklisted).toBe(true);
+
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 1]); // 38 + 2 -> lands exactly on STOY
     state = rollDice(state);
     expect(state.players.p1.blacklisted).toBe(false);
   });
@@ -1220,6 +1268,36 @@ describe('newly automated cards', () => {
 
     expect(state.players.p1.roubles).toBe(1000);
     expect(state.players.p2.roubles).toBe(1000);
+    const totalTiles = state.players.p1.ownedTileIds.length + state.players.p2.ownedTileIds.length;
+    expect(totalTiles).toBe(3);
+  });
+
+  it('excludes a permanently-spectating player from the redistribution entirely - giving them roubles or property back would functionally revive them', () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'boot' },
+      { playerId: 'p2', pieceId: 'battleship' },
+      { playerId: 'p3', pieceId: 'car' },
+    ]);
+    state = devKickPlayer(state, 'p3');
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        p1: { ...state.players.p1, roubles: 1200, ownedTileIds: [1, 3] },
+        p2: { ...state.players.p2, roubles: 800, ownedTileIds: [6] },
+        p3: { ...state.players.p3, roubles: 777 }, // distinctive - proves the effect left it alone
+      },
+    };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'collectivizationDrive');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    state = drawFromPile(state);
+
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p2.roubles).toBe(1000);
+    expect(state.players.p3.roubles).toBe(777); // untouched - still permanently out
+    expect(state.players.p3.ownedTileIds).toEqual([]);
     const totalTiles = state.players.p1.ownedTileIds.length + state.players.p2.ownedTileIds.length;
     expect(totalTiles).toBe(3);
   });
@@ -1398,6 +1476,22 @@ describe('newly automated cards', () => {
     expect(state.pendingDecision).toEqual({ type: 'cardDrawn', cardId: 'siegeOfStalingrad', forPlayerId: 'p1' });
   });
 
+  it("clears a Siege of Stalingrad lock once its owner Disappears, so the now-unowned tile isn't frozen out of every other mechanic forever", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = { ...state, players: { ...state.players, p2: { ...state.players.p2, ownedTileIds: [6] } } };
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'siegeOfStalingrad');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    state = drawFromPile(state);
+    state = resolveCardTarget(state, { targetTileId: 6 });
+    expect(state.lockedTileIds).toEqual([6]);
+
+    state = devForceDisappear(state, 'p1'); // the seizer is gone
+    expect(state.lockedTileIds).toEqual([]);
+    expect(state.players.p1.ownedTileIds).toEqual([]);
+  });
+
   it('a locked (seized) property is exempt from being surrendered to The Volga', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
@@ -1431,6 +1525,23 @@ describe('newly automated cards', () => {
 
     expect(state.players.p1.pieceId).toBe('battleship');
     expect(state.players.p2.pieceId).toBe('boot');
+  });
+
+  it("refuses to swap Pieces with a permanently-spectating player - that would functionally bring them back into play", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devKickPlayer(state, 'p2'); // kicked - permanently spectating regardless of Pool availability
+    expect(state.players.p2.isSpectating).toBe(true);
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedCard(state, 'doubleAgent');
+    state = devSetForcedRoll(state, [1, 3]);
+    state = rollDice(state);
+    state = drawFromPile(state);
+
+    const before = state;
+    state = resolveCardTarget(state, { targetPlayerId: 'p2' });
+
+    expect(state.players.p1.pieceId).toBe(before.players.p1.pieceId); // no swap happened
+    expect(state.players.p2.pieceId).toBe(before.players.p2.pieceId);
   });
 
   it('"Phone Call from Stalin" Disappears the player on a roll of 1', () => {
@@ -1598,6 +1709,53 @@ describe('held cards (hand)', () => {
       state = castShowTrialVote(state, 'p1', 'release', () => 0.9); // coin flip forced to "disappear"
 
       expect(state.players.p3.roubles).toBe(1000); // disappear won the coin flip
+    });
+
+    it("resolves once every ACTIVE player has voted - a kicked bot who never votes doesn't block it forever", () => {
+      let state = createInitialGameState([
+        { playerId: 'p1', pieceId: 'boot' },
+        { playerId: 'p2', pieceId: 'battleship' },
+        { playerId: 'p3', pieceId: 'car' },
+      ]);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = drawFromPile(state);
+      state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
+      state = callShowTrial(state, 'p1', 'p2');
+
+      state = devKickPlayer(state, 'p3'); // p3 will never vote - kicked before ever casting one
+
+      state = castShowTrialVote(state, 'p1', 'release'); // caller, weight 2
+      state = castShowTrialVote(state, 'p2', 'release');
+      // Without the isSpectating exclusion this would still be waiting on
+      // a third (turnOrder.length'th) vote from p3 that can never come.
+      expect(state.activeVote).toBeNull();
+      expect(state.players.p2.inJail).toBe(false); // released - only p1 voted, unopposed
+    });
+
+    it('kicking the LAST outstanding voter resolves the trial immediately, rather than waiting on a vote that will never come', () => {
+      let state = createInitialGameState([
+        { playerId: 'p1', pieceId: 'boot' },
+        { playerId: 'p2', pieceId: 'battleship' },
+        { playerId: 'p3', pieceId: 'car' },
+      ]);
+      state = withPosition(state, 'p1', 0);
+      state = devSetForcedCard(state, 'showTrial');
+      state = devSetForcedRoll(state, [1, 3]);
+      state = rollDice(state);
+      state = drawFromPile(state);
+      state = { ...state, players: { ...state.players, p2: { ...state.players.p2, inJail: true } } };
+      state = callShowTrial(state, 'p1', 'p2');
+
+      state = castShowTrialVote(state, 'p1', 'release'); // caller, weight 2
+      state = castShowTrialVote(state, 'p2', 'release'); // only p3 hasn't voted yet
+      expect(state.activeVote).not.toBeNull();
+
+      state = devKickPlayer(state, 'p3'); // was the last outstanding vote - should resolve right now
+      expect(state.activeVote).toBeNull();
+      expect(state.players.p2.inJail).toBe(false);
     });
   });
 });
@@ -2564,34 +2722,66 @@ describe('Smuggling to the West', () => {
     expect(state.players.p1.inJail).toBe(true);
   });
 
-  it('landing back on Free Parking secures pending West roubles', () => {
+  it('landing back exactly on the tile it was Smuggled from (Free Parking) secures pending West roubles', () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
-      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100 } },
+      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100, pendingWestOrigin: 20 } },
     };
     state = withPosition(state, 'p1', 15);
-    state = devSetForcedRoll(state, [2, 3]); // -> tile 20 again
+    state = devSetForcedRoll(state, [2, 3]); // -> tile 20 (Free Parking) again
 
     state = rollDice(state);
 
     expect(state.players.p1.westRoubles).toBe(100);
     expect(state.players.p1.pendingWestRoubles).toBe(0);
+    expect(state.players.p1.pendingWestOrigin).toBeNull();
   });
 
-  it('passing/landing on STOY also secures pending West roubles (the checkpoint opposite Free Parking)', () => {
+  it("merely passing through STOY (or anywhere else) doesn't secure it - only landing exactly back on the origin tile does", () => {
     let state = createInitialGameState(PLAYERS);
     state = {
       ...state,
-      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100 } },
+      players: { ...state.players, p1: { ...state.players.p1, pendingWestRoubles: 100, pendingWestOrigin: 20 } },
     };
     state = withPosition(state, 'p1', 38);
-    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1
+    state = devSetForcedRoll(state, [1, 2]); // 38 + 3 -> wraps past STOY to tile 1, nowhere near tile 20
 
     state = rollDice(state);
 
-    expect(state.players.p1.westRoubles).toBe(100);
+    expect(state.players.p1.westRoubles).toBe(0);
+    expect(state.players.p1.pendingWestRoubles).toBe(100); // still pending, untouched
+  });
+
+  it("Penguin's power: Smuggling from an owned property secures only by landing back on THAT property, not by passing STOY", () => {
+    let state = createInitialGameState([
+      { playerId: 'p1', pieceId: 'penguin' as const },
+      { playerId: 'p2', pieceId: 'boot' as const },
+    ]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        // Roubles kept below 1000 - landing on STOY for the first part of
+        // this test would otherwise trip the separate over-1000 hoarding
+        // rule and jail p1, derailing the second half's movement.
+        p1: { ...state.players.p1, roubles: 700, ownedTileIds: [6], pendingWestRoubles: 150, pendingWestOrigin: 6 },
+      },
+    };
+    // Passing/landing on STOY doesn't secure a Penguin-origin stash either.
+    state = withPosition(state, 'p1', 38);
+    state = devSetForcedRoll(state, [1, 1]); // 38 + 2 -> lands exactly on STOY
+    state = rollDice(state);
+    expect(state.players.p1.westRoubles).toBe(0);
+    expect(state.players.p1.pendingWestRoubles).toBe(150);
+
+    // Landing back on tile 6 (the actual owned property Smuggled from) does.
+    state = withPosition(state, 'p1', 0);
+    state = devSetForcedRoll(state, [2, 4]); // -> tile 6
+    state = rollDice(state);
+    expect(state.players.p1.westRoubles).toBe(150);
     expect(state.players.p1.pendingWestRoubles).toBe(0);
+    expect(state.players.p1.pendingWestOrigin).toBeNull();
   });
 
   it('another player landing on Free Parking catches pending West roubles and Disappears the smuggler', () => {
@@ -2746,7 +2936,10 @@ describe('Destitute (unpayable debts send you to jail instead of going negative)
       ...state,
       players: {
         ...state.players,
-        p1: { ...state.players.p1, roubles: 10, pendingWestRoubles: 300, ownedTileIds: [] }, // fee is 50
+        // The origin is the actual landing tile (1), not STOY itself - the
+        // securing check runs (and passes) before the STOY fee's
+        // affordability check gets a chance to redirect this move to jail.
+        p1: { ...state.players.p1, roubles: 10, pendingWestRoubles: 300, pendingWestOrigin: 1, ownedTileIds: [] }, // fee is 50
       },
     };
     state = withPosition(state, 'p1', 38);
@@ -3489,6 +3682,53 @@ describe('Dev Panel: kick a player', () => {
   });
 });
 
+describe('Dev Panel: revive a spectating player', () => {
+  it('gives a kicked player a fresh unclaimed Piece, 1000 roubles, and un-spectates them', () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devKickPlayer(state, 'p1');
+    expect(state.players.p1.isSpectating).toBe(true);
+
+    state = devRevivePlayer(state, 'p1');
+
+    expect(state.players.p1.isSpectating).toBe(false);
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(state.players.p1.pieceId).not.toBe('boot'); // boot is retired, can't be reused
+    expect(state.retiredPieceIds).not.toContain(state.players.p1.pieceId);
+  });
+
+  it('works the same for a Lenin-mode bankruptcy Elimination, respecting the curated Lenin Piece Pool', () => {
+    let state = createInitialGameState(PLAYERS, Math.random, false, 'lenin');
+    state = declareBankruptcy({ ...state, pendingDecision: { type: 'liquidationChoice', forPlayerId: 'p1', amountOwed: 50 } });
+    expect(state.players.p1.isSpectating).toBe(true);
+
+    state = devRevivePlayer(state, 'p1');
+
+    expect(state.players.p1.isSpectating).toBe(false);
+    expect(state.players.p1.roubles).toBe(1000);
+    expect(LENIN_PIECE_IDS).toContain(state.players.p1.pieceId);
+  });
+
+  it('is a no-op for a player who is not actually spectating', () => {
+    const state = createInitialGameState(PLAYERS);
+    expect(devRevivePlayer(state, 'p1')).toBe(state);
+  });
+
+  it("logs instead of reviving when there's no Piece left in the Pool to give them", () => {
+    let state = createInitialGameState(PLAYERS);
+    state = devKickPlayer(state, 'p1');
+    // Retire every Piece except p2's own, so nothing is left for p1.
+    const allButP2 = STARTING_PIECES.map((p) => p.id).filter((id) => id !== state.players.p2.pieceId);
+    state = { ...state, retiredPieceIds: allButP2 };
+
+    const before = state;
+    state = devRevivePlayer(state, 'p1');
+
+    expect(state.players.p1.isSpectating).toBe(true); // unchanged
+    expect(state.log[state.log.length - 1]).toContain("no Pieces left");
+    expect(state.players).toEqual(before.players);
+  });
+});
+
 describe('AFK handling (useAfkSelfCheck / useHostAfkWatchdog)', () => {
   it('afkSkipTurn ends the turn (abandoning any pending decision) and counts the skip', () => {
     let state = createInitialGameState(PLAYERS);
@@ -3734,7 +3974,7 @@ describe('Lenin mode', () => {
 
       state = endTurn(state);
 
-      expect(state.pendingDecision).toEqual({ type: 'liquidationChoice', forPlayerId: 'p1', amountOwed: 100 });
+      expect(state.pendingDecision).toEqual({ type: 'liquidationChoice', forPlayerId: 'p1', amountOwed: 50 });
       expect(state.currentTurnIndex).toBe(0); // turn hasn't actually advanced yet
     });
 
@@ -3761,17 +4001,17 @@ describe('Lenin mode', () => {
         ...state,
         players: {
           ...state.players,
-          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [6] }, // tile 6, price 100
+          p1: { ...state.players.p1, inJail: true, roubles: 10, ownedTileIds: [1] }, // tile 1, price 50
         },
       };
       state = endTurn(state);
       expect(state.pendingDecision?.type).toBe('liquidationChoice');
 
-      state = mortgageProperty(state, 'p1', 6); // +50 -> 60, still short of 100
-      expect(state.players.p1.roubles).toBe(60);
+      state = mortgageProperty(state, 'p1', 1); // +25 -> 35, still short of 50
+      expect(state.players.p1.roubles).toBe(35);
       expect(confirmLiquidationPayment(state)).toBe(state); // no-op, still can't afford it
 
-      state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 150 } } };
+      state = { ...state, players: { ...state.players, p1: { ...state.players.p1, roubles: 100 } } };
       state = confirmLiquidationPayment(state);
 
       expect(state.pendingDecision).toBeNull();

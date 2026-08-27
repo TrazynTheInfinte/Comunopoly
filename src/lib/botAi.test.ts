@@ -23,11 +23,13 @@ const gameSync = vi.hoisted(() => ({
   chooseNewPieceAndSync: vi.fn(),
   chooseEndgameTargetAndSync: vi.fn(),
   resolveCatRedirectAndSync: vi.fn(),
+  rollCardDieAndSync: vi.fn(),
+  castShowTrialVoteAndSync: vi.fn(),
 }));
 
 vi.mock('./gameSync', () => gameSync);
 
-const { botDecisionFingerprint, runBotStep } = await import('./botAi');
+const { botDecisionFingerprint, gameProgressSignature, runBotStep } = await import('./botAi');
 
 const PLAYERS = [
   { playerId: 'p1', pieceId: 'boot' as const },
@@ -163,11 +165,15 @@ describe('runBotStep - liquidationChoice', () => {
 describe('runBotStep - pieceChoice/endgameTarget queues', () => {
   it('picks a random still-available Piece from the queue', async () => {
     let state = createInitialGameState(PLAYERS);
-    state = { ...state, pendingPieceChoices: ['p1'] };
+    // A real Disappear retires the old Piece (see disappearPlayer) -
+    // without that, getAvailablePieceIds only excludes Pieces held by
+    // OTHER players, so p1's own still-current 'boot' would wrongly stay
+    // pickable and this assertion would be flaky.
+    state = { ...state, pendingPieceChoices: ['p1'], retiredPieceIds: ['boot'] };
     await runBotStep('ROOM', state, 'p1', 'easy', false);
     expect(gameSync.chooseNewPieceAndSync).toHaveBeenCalledTimes(1);
     const [, , , pieceId] = gameSync.chooseNewPieceAndSync.mock.calls[0];
-    expect(pieceId).not.toBe('boot'); // p1's current Piece isn't in the available pool
+    expect(pieceId).not.toBe('boot'); // retired - can never be picked again
   });
 
   it('a Normal/Hard bot targets the richest active opponent for its Endgame choice', async () => {
@@ -191,6 +197,49 @@ describe('runBotStep - pieceChoice/endgameTarget queues', () => {
     };
     await runBotStep('ROOM', state, 'p1', 'hard', false);
     expect(gameSync.chooseEndgameTargetAndSync).toHaveBeenCalledWith('ROOM', state, 'p1', 'p3');
+  });
+});
+
+describe('runBotStep - Show Trial voting', () => {
+  it('casts a vote when an active Show Trial has not heard from this bot yet, even off-turn', async () => {
+    let state = createInitialGameState(PLAYERS); // p1 is up, not bot-1
+    state = {
+      ...state,
+      activeVote: { callerId: 'p1', targetPlayerId: 'p1', votes: {} },
+    };
+    await runBotStep('ROOM', state, 'bot-1', 'easy', false);
+    expect(gameSync.castShowTrialVoteAndSync).toHaveBeenCalledTimes(1);
+    const [, , votingId, vote] = gameSync.castShowTrialVoteAndSync.mock.calls[0];
+    expect(votingId).toBe('bot-1');
+    expect(['release', 'disappear']).toContain(vote);
+  });
+
+  it('does nothing once this bot has already voted', async () => {
+    let state = createInitialGameState(PLAYERS);
+    state = {
+      ...state,
+      activeVote: { callerId: 'p1', targetPlayerId: 'p1', votes: { 'bot-1': 'release' } },
+    };
+    await runBotStep('ROOM', state, 'bot-1', 'easy', false);
+    expect(gameSync.castShowTrialVoteAndSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('gameProgressSignature', () => {
+  it('changes when a roll actually lands, even once past a hypothetical log cap', () => {
+    let state = createInitialGameState(PLAYERS);
+    const before = gameProgressSignature(state);
+    state = { ...state, lastRoll: [3, 4], log: Array(20).fill('padding') };
+    const after = gameProgressSignature(state);
+    expect(before).not.toBe(after);
+  });
+
+  it('is identical for two structurally-equal states, regardless of object identity', () => {
+    // Same rng for both so the shuffled card piles come out identical too -
+    // otherwise two freshly-created games would never match by chance.
+    const a = createInitialGameState(PLAYERS, () => 0.5);
+    const b = createInitialGameState(PLAYERS, () => 0.5);
+    expect(gameProgressSignature(a)).toBe(gameProgressSignature(b));
   });
 });
 

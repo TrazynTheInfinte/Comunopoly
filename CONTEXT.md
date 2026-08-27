@@ -46,7 +46,7 @@ _Avoid_: bank, treasury, the house
 The act of the State confiscating assets, either from a Disappearing player or via a card effect (e.g. Siege of Stalingrad permanently seizes a property).
 
 **Bribe**:
-The 100-Rouble payment a jailed player must make at the end of each of their turns to avoid Disappearing. Distinct from rolling doubles, which is how a player leaves jail outright.
+The payment a jailed player must make at the end of each of their turns to avoid Disappearing (Stalin Communism) or facing a Liquidation Choice (Lenin Communism) - 100 Roubles in Stalin Communism, 50 in Lenin Communism (real Bankruptcy is already a harsher backstop, so the Bribe itself doesn't need to deter as much). Distinct from rolling doubles, which is how a player leaves jail outright.
 
 **Hoarding Limit**:
 Stalin Communism only. House rule: a player who ever ends up with over 1000 Roubles is sent straight to jail. This also blocks leaving jail by any means (rolling doubles, Denounce Your Collaborators, a Show Trial release) while still over the limit — it sends them straight back in instead. Mirrored at the bottom end by Destitute: hitting exactly 0 Roubles (even via a payment they could afford) has the same jailing/no-leaving-jail effect. Lenin Communism drops the over-1000 half entirely (Destitute still applies in both) — accumulating Roubles is the whole point of solving Lenin mode's "lack of money" problem, so a rule that jails you for having *too much* would work against that.
@@ -94,7 +94,7 @@ The phase triggered once the Piece Pool has no unclaimed Pieces left to hand out
 Moving Roubles into a player's West stash by landing on Free Parking or on a property that player owns.
 
 **The West**:
-A Piece's protected Rouble stash, seeded by Smuggling. Safe from being taken by an opponent once its owner has completed one full lap of the board since smuggling it; by default, safe or not, it is fully Seized if the Piece Disappears. A room-level house rule (set at room creation, "Keep money in the West when you Disappear") can override this for every Disappear in that room, letting the West stash carry over into the player's next Piece instead.
+A Piece's protected Rouble stash, seeded by Smuggling. Safe from being taken by an opponent only once its owner lands exactly back on the specific tile they Smuggled from (Free Parking, or - Penguin's power - whichever owned property) - merely passing through anywhere, even through STOY, doesn't count. By default, safe or not, it is fully Seized if the Piece Disappears. A room-level house rule (set at room creation, "Keep money in the West when you Disappear") can override this for every Disappear in that room, letting the West stash carry over into the player's next Piece instead.
 _Avoid_: stash, savings, off-shore account
 
 **STOY**:

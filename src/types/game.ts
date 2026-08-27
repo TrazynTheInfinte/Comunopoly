@@ -144,8 +144,10 @@ export interface GamePlayerState {
   isTrotsky: boolean;
   /** Roubles safely Smuggled to the West - protected from being taken by an opponent, but always fully Seized if this Piece Disappears. */
   westRoubles: number;
-  /** Roubles Smuggled but still waiting at Free Parking - not yet safe. If ANY other player lands on Free Parking before this player lands there again (or passes/lands on STOY), that player keeps it and this player Disappears. Moves into westRoubles once secured. */
+  /** Roubles Smuggled but still waiting at pendingWestOrigin - not yet safe. If ANY other player lands on Free Parking before this player lands back on pendingWestOrigin, that player keeps it and this player Disappears. Moves into westRoubles once secured. */
   pendingWestRoubles: number;
+  /** The exact tile this player Smuggled from (Free Parking, or - Penguin's power - any owned property/railroad they landed on) - null whenever pendingWestRoubles is 0. Only landing exactly back here secures it; merely passing through (even through STOY) doesn't count. */
+  pendingWestOrigin: number | null;
   /** Permanently out of the game - keeps their seat and can watch, but is skipped in turn order forever. In Stalin mode: Disappeared after the Piece Pool ran dry, so there was no replacement Piece left to take (scores nothing at Endgame). In Lenin mode: eliminatePlayer's real bankruptcy - the game ends once only one non-spectating player is left (see GameState.leninWinnerId). */
   isSpectating: boolean;
   /** Times this player has used Rubber duck's power to actually send someone to jail (not other jailing mechanics) - feeds Rubber duck's Win Condition. */

@@ -7,6 +7,7 @@ import {
   answerNkvdQuizAndSync,
   buildHouseAndSync,
   buyPropertyAndSync,
+  castShowTrialVoteAndSync,
   chooseCardAndSync,
   chooseEndgameTargetAndSync,
   chooseNewPieceAndSync,
@@ -204,6 +205,17 @@ export async function runBotStep(
     return;
   }
 
+  // A Show Trial vote isn't turn- or decision-gated - anyone can vote
+  // anytime - but it also doesn't resolve until EVERY active player has,
+  // so a bot that never votes leaves it stuck forever. Checked before
+  // the turn/decision logic below since it can happen regardless of
+  // whose turn it actually is.
+  if (game.activeVote && !(botId in game.activeVote.votes)) {
+    const vote: 'release' | 'disappear' = Math.random() < 0.5 ? 'release' : 'disappear';
+    await castShowTrialVoteAndSync(roomCode, game, botId, vote);
+    return;
+  }
+
   const decision = game.pendingDecision;
   const isBotTurn = game.turnOrder[game.currentTurnIndex] === botId;
 
@@ -340,13 +352,28 @@ export async function runBotStep(
   await endTurnAndSync(roomCode, game);
 }
 
-/** A fingerprint for "what runBotStep is about to attempt" - used by useBotDriver's stuck-action safety net to detect a repeat attempt against an unchanged game.log (a no-op write) and force a fallback next time. Doesn't need to be exhaustive per-option, just fine-grained enough that a genuinely different situation gets a different fingerprint. */
+/** A fingerprint for "what runBotStep is about to attempt" - used by useBotDriver's stuck-action safety net alongside gameProgressSignature to detect a repeat attempt against unchanged state (a no-op write) and force a fallback next time. Doesn't need to be exhaustive per-option, just fine-grained enough that a genuinely different situation gets a different fingerprint. */
 export function botDecisionFingerprint(game: GameState, botId: string): string {
   if (game.pendingPieceChoices.includes(botId)) return 'pieceChoice';
   if (game.endgame?.pendingTargetChoices.includes(botId)) return 'endgameTarget';
+  if (game.activeVote && !(botId in game.activeVote.votes)) return 'showTrialVote';
   if (game.pendingDecision) return game.pendingDecision.type;
   if (game.turnOrder[game.currentTurnIndex] === botId) {
     return !game.lastRoll || game.lastRollWasDoubles ? 'roll' : 'endTurn';
   }
   return 'idle';
+}
+
+/**
+ * A signature of every part of GameState that a bot's decision could
+ * possibly change - used by useBotDriver both to know when to re-check
+ * what a bot should do next, and (paired with botDecisionFingerprint) to
+ * detect a genuine no-op write. Deliberately does NOT use game.log for
+ * either purpose: logEvent caps the log at its last 20 entries
+ * (game/engine.ts), so in any game past its first ~20 events, log.length
+ * stops changing at all - relying on it here would silently stop
+ * re-triggering the bot driver entirely partway through a normal game.
+ */
+export function gameProgressSignature(game: GameState): string {
+  return JSON.stringify(game);
 }

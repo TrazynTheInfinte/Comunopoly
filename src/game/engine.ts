@@ -5,7 +5,7 @@ import {
   findCard,
 } from '../data/cards';
 import { NKVD_QUESTIONS } from '../data/nkvdQuestions';
-import { STARTING_PIECES } from '../data/pieces';
+import { LENIN_PIECE_IDS, STARTING_PIECES } from '../data/pieces';
 import type { CardDeck, ColorGroup, GameState, GamePlayerState, PieceId, RulesetMode, TradeOffer } from '../types/game';
 
 const ALL_PIECE_IDS: PieceId[] = STARTING_PIECES.map((p) => p.id);
@@ -15,6 +15,10 @@ const STOY_LANDING_BONUS = 200;
 const STOY_PASS_FEE = 50;
 const JAIL_POSITION = 10;
 const JAIL_BRIBE = 100;
+// Lenin mode's jail bribe is cheaper than Stalin's - real bankruptcy is
+// already a much harsher backstop than Disappearing, so the bribe itself
+// doesn't need to carry as much weight as a deterrent.
+const LENIN_JAIL_BRIBE = 50;
 const MAX_DOUBLES_BEFORE_JAIL = 3;
 // House rules: hoarding over this much sends you straight to jail, and
 // you can't leave jail (by any means) while still over it.
@@ -91,6 +95,7 @@ export function createInitialGameState(
       isTrotsky: false,
       westRoubles: 0,
       pendingWestRoubles: 0,
+      pendingWestOrigin: null,
       isSpectating: false,
       sentToJailCount: 0,
       doublesRolledCount: 0,
@@ -146,6 +151,11 @@ export function createInitialGameState(
   return rulesetMode === 'lenin' ? initialState : checkEndgameTrigger(initialState);
 }
 
+/** Player IDs still actually in the game - excludes anyone permanently isSpectating (a real Disappear-with-no-Pieces-left, a kick, Lenin's bankruptcy). Used anywhere a random pick, redistribution, or completion count must never land on someone who's already out. */
+function activePlayerIds(state: GameState): string[] {
+  return state.turnOrder.filter((id) => !state.players[id].isSpectating);
+}
+
 /** True once every one of the 12 Piece IDs is accounted for - either permanently retired, or currently held by an active player. That's the Piece Pool running dry, which is what starts the Endgame. */
 function isPoolExhausted(state: GameState): boolean {
   const everClaimed = new Set(state.retiredPieceIds);
@@ -168,7 +178,7 @@ function checkEndgameTrigger(state: GameState): GameState {
   if (state.rulesetMode === 'lenin') return state;
   if (state.endgame || !isPoolExhausted(state)) return state;
 
-  const activeIds = state.turnOrder.filter((id) => !state.players[id].isSpectating);
+  const activeIds = activePlayerIds(state);
   // Rotate so the current player is first - their turn (in progress or
   // about to start) counts as their "one more turn," not an extra one.
   const startIndex = activeIds.indexOf(state.turnOrder[state.currentTurnIndex]);
@@ -225,7 +235,7 @@ function beginEndgameTargetPhase(state: GameState): GameState {
  */
 function computeEndgameScores(state: GameState): GameState {
   if (!state.endgame) return state;
-  const activeIds = state.turnOrder.filter((id) => !state.players[id].isSpectating);
+  const activeIds = activePlayerIds(state);
   const targets = state.endgame.targetChoices;
   const pieceOf = (id: string) => state.players[id].pieceId;
   const findByPiece = (pieceId: PieceId) => activeIds.find((id) => pieceOf(id) === pieceId);
@@ -619,6 +629,12 @@ function disappearPlayer(
   // Foreclosed properties go back to the bank clean - any mortgage on
   // them is wiped rather than sticking around on a now-unowned tile.
   const mortgagedTileIds = state.mortgagedTileIds.filter((id) => !player.ownedTileIds.includes(id));
+  // Same for a Siege of Stalingrad lock - it's tied to a specific owner
+  // ("until that owner Disappears"), so it has to lift the instant that
+  // happens, or the tile stays permanently frozen out of every
+  // ownership-transferring mechanic (T-Rex/Wheel Barrel's auto-seize,
+  // trading, the Volga, etc.) despite being unowned again.
+  const lockedTileIds = state.lockedTileIds.filter((id) => !player.ownedTileIds.includes(id));
 
   const retiredPieceId = player.pieceId;
 
@@ -628,6 +644,12 @@ function disappearPlayer(
     housesRemaining,
     hotelsRemaining,
     mortgagedTileIds,
+    lockedTileIds,
+    // A fresh takeover always deserves a fresh countdown - otherwise the
+    // next owner (forced to take it the moment they land on the now-
+    // unowned tile) inherits whatever was left of this owner's, possibly
+    // exploding almost immediately instead of after a real 3 turns.
+    chernobylCountdown: player.ownedTileIds.includes(CHERNOBYL_TILE_ID) ? null : state.chernobylCountdown,
     lastDisappearedPlayerId: playerId,
     retiredPieceIds: [...state.retiredPieceIds, retiredPieceId],
     // Hat's piece is retired along with everything else here, so any
@@ -653,9 +675,15 @@ function disappearPlayer(
         // on, it's the one thing that survives into their new Piece.
         westRoubles: state.carryWestOnDisappear ? player.westRoubles : 0,
         pendingWestRoubles: state.carryWestOnDisappear ? player.pendingWestRoubles : 0,
+        pendingWestOrigin: state.carryWestOnDisappear ? player.pendingWestOrigin : null,
         doublesRolledCount: 0,
         consecutiveAfkSkips: 0,
         isAfkSpectating: false,
+        // A fresh Piece means a fresh start on both of these too - left
+        // untouched, they'd carry a former Piece's already-escalated NKVD/
+        // Kremlin cycle straight into the new one's very first visit.
+        kremlinVisits: 0,
+        nkvdVisits: 0,
       },
     },
   };
@@ -708,10 +736,11 @@ function disappearPlayer(
     // so pull them off the "everyone gets one more turn" list instead of
     // leaving the game waiting on them forever.
     next = removeFromFinalLap(next, playerId);
-    return logEvent(
+    next = logEvent(
       next,
       `Disappeared (${reason}). No Pieces left in the Piece Pool - permanently out, spectating the rest of the match.`,
     );
+    return recheckShowTrialCompletion(next);
   }
 
   next = { ...next, pendingPieceChoices: [...next.pendingPieceChoices, playerId] };
@@ -724,6 +753,27 @@ function clearTradesInvolving(state: GameState, playerId: string): GameState {
     (t) => t.fromPlayerId !== playerId && t.toPlayerId !== playerId,
   );
   return activeTrades.length === state.activeTrades.length ? state : { ...state, activeTrades };
+}
+
+/**
+ * A Show Trial vote's completion only ever gets re-checked when someone
+ * casts a NEW vote (see castShowTrialVote) - but Disappearing/eliminating
+ * a player who simply never got a chance to vote (a kicked bot, an
+ * eliminated straggler) shrinks the pool of voters who still need to,
+ * and if that was the LAST one still outstanding, nothing else would
+ * ever trigger the resolution. Called from disappearPlayer/
+ * eliminatePlayer for exactly that reason - a no-op the rest of the
+ * time. Uses Math.random directly rather than threading an rng
+ * parameter through both of those (and everything that calls them) just
+ * for this one rare tie-break coin flip.
+ */
+function recheckShowTrialCompletion(state: GameState): GameState {
+  if (!state.activeVote) return state;
+  const eligibleVoters = activePlayerIds(state).length;
+  if (Object.keys(state.activeVote.votes).length >= eligibleVoters) {
+    return resolveShowTrialVote(state, Math.random);
+  }
+  return state;
 }
 
 /**
@@ -756,6 +806,10 @@ function eliminatePlayer(state: GameState, playerId: string, reason: string): Ga
     propertyHouses = { ...propertyHouses, [tileId]: 0 };
   }
   const mortgagedTileIds = state.mortgagedTileIds.filter((id) => !player.ownedTileIds.includes(id));
+  // See disappearPlayer's identical comment - a lock tied to this owner
+  // has to lift the instant they're gone, or the tile stays frozen out
+  // of every ownership-transferring mechanic despite being unowned.
+  const lockedTileIds = state.lockedTileIds.filter((id) => !player.ownedTileIds.includes(id));
 
   let next: GameState = {
     ...state,
@@ -763,6 +817,11 @@ function eliminatePlayer(state: GameState, playerId: string, reason: string): Ga
     housesRemaining,
     hotelsRemaining,
     mortgagedTileIds,
+    lockedTileIds,
+    // See disappearPlayer's identical comment - the next owner (forced to
+    // take it the moment they land on the now-unowned tile) needs a
+    // fresh countdown, not whatever was left of this owner's.
+    chernobylCountdown: player.ownedTileIds.includes(CHERNOBYL_TILE_ID) ? null : state.chernobylCountdown,
     players: {
       ...state.players,
       [playerId]: {
@@ -777,6 +836,7 @@ function eliminatePlayer(state: GameState, playerId: string, reason: string): Ga
         isTrotsky: false,
         westRoubles: 0,
         pendingWestRoubles: 0,
+        pendingWestOrigin: null,
         isSpectating: true,
       },
     },
@@ -810,13 +870,13 @@ function eliminatePlayer(state: GameState, playerId: string, reason: string): Ga
 
   next = logEvent(next, `Bankrupt (${reason}) - eliminated from the game.`);
 
-  const remaining = next.turnOrder.filter((id) => !next.players[id].isSpectating);
+  const remaining = activePlayerIds(next);
   if (remaining.length === 1 && !next.leninWinnerId) {
     next = { ...next, leninWinnerId: remaining[0] };
     next = logEvent(next, `${remaining[0]} is the last one standing - wins the game!`);
   }
 
-  return next;
+  return recheckShowTrialCompletion(next);
 }
 
 /**
@@ -1175,7 +1235,10 @@ function normalizeAnswer(text: string): string {
  * properties are dealt out round-robin, standing in for "everyone agreed."
  */
 function collectivizationDriveEffect(state: GameState, playerId: string, rng: () => number): GameState {
-  const playerIds = state.turnOrder;
+  // Permanently-spectating players are out of the game for good - they
+  // don't get a cut of the redistributed cash/property (which would
+  // functionally bring them back in) any more than they'd get a vote.
+  const playerIds = activePlayerIds(state);
   const totalRoubles = playerIds.reduce((sum, id) => sum + state.players[id].roubles, 0);
   const share = Math.floor(totalRoubles / playerIds.length);
   const remainder = totalRoubles - share * playerIds.length;
@@ -1223,7 +1286,12 @@ function greatPurgeEffect(state: GameState, _playerId: string, rng: () => number
   }
   next = logEvent(next, 'The Great Purge: everyone loses half their tradeable properties.');
 
-  const loserId = next.turnOrder[Math.floor(rng() * next.turnOrder.length)];
+  // A permanently-spectating player has nothing left to lose - picking
+  // one as the "loser" would just be a no-op Disappear/Fine attempt on
+  // someone already out, instead of a real consequence for someone
+  // still playing.
+  const eligibleIds = activePlayerIds(next);
+  const loserId = eligibleIds[Math.floor(rng() * eligibleIds.length)];
   return handleDisappearTrigger(
     next,
     loserId,
@@ -1274,7 +1342,11 @@ function bestsellerResolve(state: GameState, playerId: string, roll: number): Ga
  * that is only a "soft" secret.
  */
 function fourthInternationalEffect(state: GameState, _playerId: string, rng: () => number): GameState {
-  const trotskyId = state.turnOrder[Math.floor(rng() * state.turnOrder.length)];
+  // A permanently-spectating player can never be accused (or caught by
+  // landing on the hiding spot), so marking one Trotsky would make the
+  // whole hunt unwinnable - only active players are eligible.
+  const eligibleIds = activePlayerIds(state);
+  const trotskyId = eligibleIds[Math.floor(rng() * eligibleIds.length)];
   const players = { ...state.players };
   for (const id of state.turnOrder) {
     players[id] = { ...players[id], isTrotsky: id === trotskyId };
@@ -1713,11 +1785,11 @@ function resolveLanding(
 }
 
 /**
- * Free Parking: first, anyone else's Roubles still waiting here get
- * caught (this player keeps them, the original smuggler Disappears) -
- * then, if this player's own Smuggled Roubles made it back here in
- * time, they're now safely in the West. Either way, offer this player
- * the chance to Smuggle some more before moving on.
+ * Free Parking: anyone else's Roubles still waiting here get caught
+ * (this player keeps them, the original smuggler Disappears) - this
+ * player's own pending stash, if this landing is what secured it, was
+ * already handled earlier in moveAndResolve. Either way, offer this
+ * player the chance to Smuggle some more before moving on.
  */
 function resolveFreeParkingLanding(state: GameState, playerId: string): GameState {
   let next = state;
@@ -1729,7 +1801,10 @@ function resolveFreeParkingLanding(state: GameState, playerId: string): GameStat
     next = giveRoubles(next, playerId, pending);
     next = {
       ...next,
-      players: { ...next.players, [otherId]: { ...next.players[otherId], pendingWestRoubles: 0 } },
+      players: {
+        ...next.players,
+        [otherId]: { ...next.players[otherId], pendingWestRoubles: 0, pendingWestOrigin: null },
+      },
     };
     next = logEvent(
       next,
@@ -1738,21 +1813,9 @@ function resolveFreeParkingLanding(state: GameState, playerId: string): GameStat
     next = handleDisappearTrigger(next, otherId, 'got caught smuggling to the West', LENIN_FINE_FREE_PARKING_CAUGHT);
   }
 
-  const secured = next.players[playerId].pendingWestRoubles;
-  if (secured > 0) {
-    next = {
-      ...next,
-      players: {
-        ...next.players,
-        [playerId]: {
-          ...next.players[playerId],
-          westRoubles: next.players[playerId].westRoubles + secured,
-          pendingWestRoubles: 0,
-        },
-      },
-    };
-    next = logEvent(next, `${secured} roubles safely Smuggled to the West.`);
-  }
+  // Securing this player's own pending stash, if landing here was what
+  // did it, already happened earlier in moveAndResolve (the exact-origin
+  // check, which runs before any tile-specific landing resolution).
 
   return openSmuggleDecision(next, playerId);
 }
@@ -1801,17 +1864,14 @@ function moveAndResolve(
 
   next = logEvent(next, `Moved to ${getTile(newPosition).name}.`);
 
-  // Both of these trigger off reaching STOY itself (passing through or
-  // landing exactly) and have to run before the STOY fee's affordability
-  // check below - that check can end the move early (straight to jail),
-  // and neither of these is conditional on actually being able to pay
-  // the fee: Smuggled Roubles reaching safety, and a Blacklist clearing,
-  // aren't things a STOY toll should be able to block.
-  //
-  // STOY sits directly opposite Free Parking on the board - reaching it
-  // is the other way (besides making it back to Free Parking itself) to
-  // secure Smuggled Roubles still waiting there.
-  if ((passedStoy || landedOnStoy) && next.players[playerId].pendingWestRoubles > 0) {
+  // Has to run before the STOY fee's affordability check below - that
+  // check can end the move early (straight to jail), and securing
+  // Smuggled Roubles isn't something a STOY toll should be able to
+  // block. Only an exact landing back on the tile this player actually
+  // Smuggled from (Free Parking, or - Penguin's power - whichever owned
+  // property they used) counts - merely passing through anywhere,
+  // including STOY, doesn't.
+  if (next.players[playerId].pendingWestOrigin === newPosition && next.players[playerId].pendingWestRoubles > 0) {
     const secured = next.players[playerId].pendingWestRoubles;
     next = {
       ...next,
@@ -1821,18 +1881,16 @@ function moveAndResolve(
           ...next.players[playerId],
           westRoubles: next.players[playerId].westRoubles + secured,
           pendingWestRoubles: 0,
+          pendingWestOrigin: null,
         },
       },
     };
     next = logEvent(next, `${secured} roubles safely Smuggled to the West.`);
   }
 
-  // Blacklist clears once you've made it back around to (or through)
-  // STOY - an approximation of "a full circle from your current
-  // location," which would otherwise need tracking an arbitrary
-  // per-player start tile rather than reusing the STOY-crossing check
-  // every move already computes.
-  if ((passedStoy || landedOnStoy) && next.players[playerId].blacklisted) {
+  // Blacklist clears only on an exact landing on STOY - not merely
+  // passing through it.
+  if (landedOnStoy && next.players[playerId].blacklisted) {
     next = {
       ...next,
       players: { ...next.players, [playerId]: { ...next.players[playerId], blacklisted: false } },
@@ -2149,7 +2207,7 @@ export function resolveCardTarget(
     }
   } else if (cardId === 'doubleAgent' && selection.targetPlayerId) {
     const targetId = selection.targetPlayerId;
-    if (targetId !== playerId && state.players[targetId]) {
+    if (targetId !== playerId && state.players[targetId] && !state.players[targetId].isSpectating) {
       const a = state.players[playerId];
       const b = state.players[targetId];
       next = {
@@ -2277,7 +2335,14 @@ export function castShowTrialVote(
     activeVote: { ...state.activeVote, votes: { ...state.activeVote.votes, [playerId]: vote } },
   };
 
-  if (Object.keys(next.activeVote!.votes).length === next.turnOrder.length) {
+  // Compares against currently-active players, not the full turnOrder -
+  // a permanently-spectating player (kicked, Disappeared with no Pieces
+  // left, Lenin-bankrupted) is never coming back to vote, so counting
+  // them in the required total would leave the trial stuck forever.
+  // >= rather than === for the same reason: someone who already voted
+  // could themselves become spectating afterward, shrinking the
+  // requirement below the count already cast.
+  if (Object.keys(next.activeVote!.votes).length >= activePlayerIds(next).length) {
     next = resolveShowTrialVote(next, rng);
   }
   return next;
@@ -2381,6 +2446,11 @@ export function resolveSmuggleOffer(state: GameState, amount: number): GameState
       [playerId]: {
         ...paid.players[playerId],
         pendingWestRoubles: paid.players[playerId].pendingWestRoubles + clamped,
+        // Only landing exactly back here (not merely passing through, even
+        // through STOY) secures it - see moveAndResolve. Smuggling again
+        // before the first pile is secured just moves the target to
+        // wherever this newer smuggle happened.
+        pendingWestOrigin: player.position,
       },
     },
   };
@@ -2858,17 +2928,18 @@ function hasLiquidatableAssets(state: GameState, playerId: string): boolean {
 
 function chargeJailBribe(state: GameState, playerId: string): GameState {
   const player = state.players[playerId];
-  if (player.roubles >= JAIL_BRIBE) {
+  const bribe = state.rulesetMode === 'lenin' ? LENIN_JAIL_BRIBE : JAIL_BRIBE;
+  if (player.roubles >= bribe) {
     return logEvent(
-      payRoubles(state, playerId, JAIL_BRIBE),
-      `Paid the ${JAIL_BRIBE} rouble jail bribe.`,
+      payRoubles(state, playerId, bribe),
+      `Paid the ${bribe} rouble jail bribe.`,
     );
   }
   if (state.rulesetMode === 'lenin') {
     if (hasLiquidatableAssets(state, playerId)) {
       return {
         ...state,
-        pendingDecision: { type: 'liquidationChoice', forPlayerId: playerId, amountOwed: JAIL_BRIBE },
+        pendingDecision: { type: 'liquidationChoice', forPlayerId: playerId, amountOwed: bribe },
       };
     }
     return eliminatePlayer(state, playerId, 'could not afford the jail bribe and had nothing left to sell');
@@ -3202,7 +3273,69 @@ export function devKickPlayer(state: GameState, playerId: string): GameState {
     next = devForceSkipTurn(next);
   }
 
-  return next;
+  // disappearPlayer's own recheck only fires when it decides on its own
+  // that the Piece Pool is exhausted - a kick forces isSpectating
+  // regardless, so it needs its own check for the same reason (this
+  // player may have been the last outstanding Show Trial vote).
+  return recheckShowTrialCompletion(next);
+}
+
+/**
+ * Debug-only recovery tool: reverses ANY permanently-spectating state -
+ * Stalin's Piece-Pool-exhausted Disappear, a real kick, Lenin's
+ * bankruptcy Elimination, all treated identically - by handing this
+ * player a random unclaimed Piece (respecting Lenin's curated Pool, same
+ * as addBotToLobby/joinRoom) and a fresh 1000 Roubles, same as any other
+ * fresh start. Not a real game mechanic; a no-op if they're not actually
+ * spectating, or if there's no Piece left to give them.
+ */
+export function devRevivePlayer(state: GameState, playerId: string): GameState {
+  const player = state.players[playerId];
+  if (!player || !player.isSpectating) return state;
+
+  const allowedIds = state.rulesetMode === 'lenin' ? LENIN_PIECE_IDS : ALL_PIECE_IDS;
+  const claimedIds = new Set(
+    Object.entries(state.players)
+      .filter(([id]) => id !== playerId)
+      .map(([, p]) => p.pieceId),
+  );
+  const pieceId = allowedIds.find((id) => !state.retiredPieceIds.includes(id) && !claimedIds.has(id));
+  if (!pieceId) {
+    return logEvent(state, `Can't revive - no Pieces left in the Pool.`);
+  }
+
+  const next: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: {
+        ...player,
+        pieceId,
+        position: 0,
+        roubles: STARTING_ROUBLES,
+        ownedTileIds: [],
+        inJail: false,
+        jailedForInsolvency: false,
+        turnsToSkip: 0,
+        extraTurns: 0,
+        movingBackward: false,
+        blacklisted: false,
+        hidingPosition: null,
+        heldCardIds: [],
+        isTrotsky: false,
+        westRoubles: 0,
+        pendingWestRoubles: 0,
+        pendingWestOrigin: null,
+        isSpectating: false,
+        isAfkSpectating: false,
+        doublesRolledCount: 0,
+        consecutiveAfkSkips: 0,
+        kremlinVisits: 0,
+        nkvdVisits: 0,
+      },
+    },
+  };
+  return logEvent(next, `Revived by the host as a fresh Piece.`);
 }
 
 /**

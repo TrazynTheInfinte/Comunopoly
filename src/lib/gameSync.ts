@@ -31,6 +31,7 @@ import {
   devForceSkipTurn,
   devJumpToTile,
   devKickPlayer,
+  devRevivePlayer,
   devSetForcedCard,
   devSetForcedRoll,
   devSetRoubles,
@@ -384,6 +385,10 @@ export async function devForceSkipTurnAndSync(roomCode: string, game: GameState)
 
 export async function devKickPlayerAndSync(roomCode: string, game: GameState, playerId: string) {
   await writeGameState(roomCode, devKickPlayer(game, playerId));
+}
+
+export async function devRevivePlayerAndSync(roomCode: string, game: GameState, playerId: string) {
+  await writeGameState(roomCode, devRevivePlayer(game, playerId));
 }
 
 export async function devForceAutoPickPieceAndSync(

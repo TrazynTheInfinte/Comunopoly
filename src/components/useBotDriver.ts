@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { botDecisionFingerprint, runBotStep } from '../lib/botAi';
+import { botDecisionFingerprint, gameProgressSignature, runBotStep } from '../lib/botAi';
 import type { GameState } from '../types/game';
 import type { Room } from '../types/room';
 
@@ -21,6 +21,11 @@ function pickActiveBotId(room: Room, game: GameState): string | null {
   const withEndgameChoice = bots.find((id) => game.endgame?.pendingTargetChoices.includes(id));
   if (withEndgameChoice) return withEndgameChoice;
 
+  if (game.activeVote) {
+    const notYetVoted = bots.find((id) => !(id in game.activeVote!.votes));
+    if (notYetVoted) return notYetVoted;
+  }
+
   const currentTurnPlayerId = game.turnOrder[game.currentTurnIndex];
   const decision = game.pendingDecision;
   if (decision) {
@@ -38,14 +43,23 @@ function pickActiveBotId(room: Room, game: GameState): string | null {
  * calls this before its own `if (!game) return null` guard, same as
  * useHostAfkWatchdog/useSoundEvents already do.
  *
+ * Re-triggers (and detects a stuck no-op, see below) off
+ * gameProgressSignature - a full snapshot of `game` - rather than
+ * game.log.length. An earlier version used log.length, which broke
+ * silently once a game passed ~20 logged events: logEvent caps the log
+ * there, so its length stops changing for the rest of the match even
+ * though real actions keep happening, and bots would just stop taking
+ * their next action the moment that happened (most visibly, freezing
+ * forever on a card draw, since nothing else can happen on that decision
+ * until it resolves).
+ *
  * Stuck-action safety net: tracks the (botId, decision fingerprint,
- * game.log.length) of the last attempt. Every real engine action logs at
- * least one event on success, so if the next tick would repeat the exact
- * same attempt against an unchanged log length, the previous write must
- * have no-op'd (a mismatched guard versus game/engine.ts) - runBotStep is
- * then told to force its guaranteed-effective fallback instead, so a
- * hand-mirrored guard doesn't need to be flawless to avoid ever freezing
- * the game.
+ * state signature) of the last attempt. If the next tick would repeat
+ * the exact same attempt against byte-identical state, the previous
+ * write must have no-op'd (a mismatched guard versus game/engine.ts) -
+ * runBotStep is then told to force its guaranteed-effective fallback
+ * instead, so a hand-mirrored guard doesn't need to be flawless to avoid
+ * ever freezing the game.
  */
 export function useBotDriver(
   roomCode: string,
@@ -56,9 +70,10 @@ export function useBotDriver(
   const latestRef = useRef({ roomCode, room, game });
   latestRef.current = { roomCode, room, game };
 
-  const lastAttemptRef = useRef<{ botId: string; fingerprint: string; logLength: number } | null>(null);
+  const lastAttemptRef = useRef<{ botId: string; fingerprint: string; signature: string } | null>(null);
 
   const activeBotId = game ? pickActiveBotId(room, game) : null;
+  const gameSignature = game ? gameProgressSignature(game) : null;
 
   useEffect(() => {
     if (!isHost || !activeBotId || !game) return;
@@ -69,18 +84,19 @@ export function useBotDriver(
       if (!botId) return;
 
       const fingerprint = botDecisionFingerprint(latestGame, botId);
+      const signature = gameProgressSignature(latestGame);
       const last = lastAttemptRef.current;
       const forceFallback =
         !!last &&
         last.botId === botId &&
         last.fingerprint === fingerprint &&
-        last.logLength === latestGame.log.length;
-      lastAttemptRef.current = { botId, fingerprint, logLength: latestGame.log.length };
+        last.signature === signature;
+      lastAttemptRef.current = { botId, fingerprint, signature };
 
       const difficulty = latestRoom.players[botId]?.botDifficulty ?? 'normal';
       void runBotStep(latestRoomCode, latestGame, botId, difficulty, forceFallback);
     }, BOT_THINKING_DELAY_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost, activeBotId, game?.log.length]);
+  }, [isHost, activeBotId, gameSignature]);
 }

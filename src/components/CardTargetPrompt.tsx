@@ -32,7 +32,7 @@ interface CardTargetPromptProps {
 // the cardTarget pending decision in game/engine.ts.
 function CardTargetPrompt({ cardId, room, roomCode, playerId, game }: CardTargetPromptProps) {
   const card = findCard(cardId);
-  const otherPlayers = game.turnOrder.filter((id) => id !== playerId);
+  const otherPlayers = game.turnOrder.filter((id) => id !== playerId && !game.players[id].isSpectating);
 
   const opponentTileOptions = Object.entries(game.players)
     .filter(([id]) => id !== playerId)

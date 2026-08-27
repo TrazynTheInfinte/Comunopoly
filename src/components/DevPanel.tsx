@@ -9,6 +9,7 @@ import {
   devForceSkipTurnAndSync,
   devJumpToTileAndSync,
   devKickPlayerAndSync,
+  devRevivePlayerAndSync,
   devSetForcedCardAndSync,
   devSetForcedRollAndSync,
   devSetRoublesAndSync,
@@ -270,6 +271,27 @@ function DevPanel({ room, roomCode, game }: DevPanelProps) {
           spectating (never a fresh Piece pick, there's no one left to make that choice) and, if it
           was their turn, forces it to end. Use this for a player who's genuinely gone, not just
           taking their time - it can't be undone.
+        </p>
+      </div>
+
+      <div className="dev-panel-section">
+        <p>Revive a spectating player</p>
+        {game.turnOrder.filter((id) => game.players[id].isSpectating).length === 0 ? (
+          <p className="hint">Nobody's out.</p>
+        ) : (
+          game.turnOrder
+            .filter((id) => game.players[id].isSpectating)
+            .map((id) => (
+              <div key={id} className="dev-panel-row">
+                <label>{room.players[id]?.name}</label>
+                <button onClick={() => devRevivePlayerAndSync(roomCode, game, id)}>Revive</button>
+              </div>
+            ))
+        )}
+        <p className="hint">
+          Undoes any permanently-spectating state - a Piece-Pool-exhausted Disappear, a kick, Lenin's
+          bankruptcy Elimination, all treated the same - with a random unclaimed Piece and a fresh
+          1000 roubles, same as freshly joining mid-game. Not a real game mechanic; recovery only.
         </p>
       </div>
 

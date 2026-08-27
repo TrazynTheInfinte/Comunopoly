@@ -24,8 +24,10 @@ const BOT_NAME_WORDS = [
   'Pigeon',
 ];
 
-/** A random "Communist <word>" name for a bot added in the lobby. Not guaranteed unique - same as human display names, which also aren't. */
-export function randomBotName(): string {
-  const word = BOT_NAME_WORDS[Math.floor(Math.random() * BOT_NAME_WORDS.length)];
+/** A random "Communist <word>" name for a bot added in the lobby - unique within `takenNames` (the room's other bots) as long as the word list has an unused entry left; falls back to a repeat once every word is already taken. */
+export function randomBotName(takenNames: string[] = []): string {
+  const available = BOT_NAME_WORDS.filter((word) => !takenNames.includes(`Communist ${word}`));
+  const pool = available.length > 0 ? available : BOT_NAME_WORDS;
+  const word = pool[Math.floor(Math.random() * pool.length)];
   return `Communist ${word}`;
 }

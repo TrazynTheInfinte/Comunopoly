@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getTile } from '../data/board';
 import { STARTING_PIECES } from '../data/pieces';
 import { findCard } from '../data/cards';
-import type { CardDeck } from '../types/game';
+import type { CardDeck, GameState } from '../types/game';
 import {
   acceptVolgaOfferAndSync,
   accuseOfTrotskyAndSync,
@@ -10,6 +10,7 @@ import {
   buyPropertyAndSync,
   declineVolgaOfferAndSync,
   endTurnAndSync,
+  mortgagePropertyAndSync,
   rejoinFromAfkAndSync,
   rollCardDieAndSync,
   rollDiceAndSync,
@@ -66,6 +67,20 @@ interface GameBoardProps {
 
 function pieceName(pieceId: string): string {
   return STARTING_PIECES.find((piece) => piece.id === pieceId)?.name ?? pieceId;
+}
+
+/** Owned properties/railroads `player` could mortgage right now to raise cash before deciding on a purchase - not already mortgaged, no houses on the specific tile. Mirrors LiquidationChoicePrompt's own filter (mortgageProperty itself still rejects one with houses elsewhere in its color group, logging why, if this lighter check lets one through). */
+function mortgageableForPurchase(
+  game: GameState,
+  player: { ownedTileIds: number[] },
+): { tileId: number; name: string; mortgageValue: number }[] {
+  return player.ownedTileIds.flatMap((tileId) => {
+    const tile = getTile(tileId);
+    if (tile.kind !== 'property' && tile.kind !== 'railroad') return [];
+    if (game.mortgagedTileIds.includes(tileId)) return [];
+    if ((game.propertyHouses[tileId] ?? 0) > 0) return [];
+    return [{ tileId, name: tile.name, mortgageValue: Math.floor(tile.price / 2) }];
+  });
 }
 
 // Player IDs are crypto.randomUUID() (see lib/playerIdentity.ts) - a
@@ -383,6 +398,16 @@ function GameBoard({ room, roomCode, playerId, onLeave }: GameBoardProps) {
                   )}
                   ?
                 </p>
+                {me && mortgageableForPurchase(game, me).length > 0 && (
+                  <div className="liquidation-choice-group">
+                    <p className="hint">Short on cash? Mortgage something first:</p>
+                    {mortgageableForPurchase(game, me).map(({ tileId, name, mortgageValue }) => (
+                      <button key={tileId} onClick={() => mortgagePropertyAndSync(roomCode, game, playerId, tileId)}>
+                        {name} (+₽{mortgageValue})
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="purchase-prompt-actions">
                   <button onClick={() => buyPropertyAndSync(roomCode, game)}>Buy</button>
                   <button onClick={() => skipPurchaseAndSync(roomCode, game)}>Skip</button>

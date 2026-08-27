@@ -174,10 +174,14 @@ export async function addBotToLobby(
     throw new Error('No Pieces left in the Pool for a bot to use.');
   }
 
+  const takenBotNames = Object.values(room.players)
+    .filter((player) => player.isBot)
+    .map((player) => player.name);
+
   const botId = `bot-${crypto.randomUUID()}`;
   await updateDoc(roomRef, {
     [`players.${botId}`]: {
-      name: randomBotName(),
+      name: randomBotName(takenBotNames),
       joinedAt: serverTimestamp(),
       pieceId,
       isBot: true,
